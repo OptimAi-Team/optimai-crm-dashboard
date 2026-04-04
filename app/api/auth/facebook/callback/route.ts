@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+// Import the decodeState function from the initiation route
+function decodeState(state: string): { userId: string } | null {
+  try {
+    const decoded = Buffer.from(state, "base64").toString("utf-8");
+    const parsed = JSON.parse(decoded);
+    return { userId: parsed.userId };
+  } catch (error) {
+    console.error("Failed to decode state parameter:", error);
+    return null;
+  }
+}
+
 export async function GET(request: NextRequest) {
   console.log("=== Facebook OAuth Callback Started ===");
   try {
@@ -115,29 +127,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Initialize Supabase client
-    console.log("Initializing Supabase client...");
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Get current user from Supabase auth
-    console.log("Checking authenticated session...");
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    console.log("Session check:", {
-      hasSession: !!session,
-      hasUser: !!session?.user,
-      userId: session?.user?.id || "none",
-    });
-
-    if (!session?.user) {
-      console.error("No authenticated user session found");
-      return NextResponse.redirect(
-        `${redirectUri}/login?next=/settings&fb=error&message=Not authenticated`
-      );
-    }
-
     // Fetch Facebook ad accounts and pages
     console.log("Fetching Facebook ad accounts for user:", userData.id);
     const adAccountsResponse = await fetch(
@@ -159,10 +148,37 @@ export async function GET(request: NextRequest) {
     const tokenExpiresAt = new Date(Date.now() + tokenExpiresIn * 1000).toISOString();
     console.log("Token expires at:", tokenExpiresAt);
 
+    // Get state parameter containing the user ID
+    const state = searchParams.get("state");
+    console.log("Received state parameter:", state ? "present" : "missing");
+
+    if (!state) {
+      console.error("No state parameter received from Facebook");
+      return NextResponse.redirect(
+        `${redirectUri}/settings?fb=error&message=No state parameter received`
+      );
+    }
+
+    // Decode state to get the user ID
+    const stateData = decodeState(state);
+    if (!stateData || !stateData.userId) {
+      console.error("Failed to decode state parameter or extract user ID");
+      return NextResponse.redirect(
+        `${redirectUri}/settings?fb=error&message=Invalid state parameter`
+      );
+    }
+
+    const clientId = stateData.userId;
+    console.log("Extracted client_id from state:", clientId);
+
+    // Initialize Supabase client
+    console.log("Initializing Supabase client...");
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
     // Save Facebook connection to Supabase with proper column names
-    console.log("Attempting to insert/update facebook_connections for client_id:", session.user.id);
+    console.log("Attempting to insert/update facebook_connections for client_id:", clientId);
     const upsertPayload = {
-      client_id: session.user.id,
+      client_id: clientId,
       fb_user_id: userData.id,
       access_token: "***REDACTED***",
       token_expires_at: tokenExpiresAt,
@@ -175,7 +191,7 @@ export async function GET(request: NextRequest) {
       .from("facebook_connections")
       .upsert(
         {
-          client_id: session.user.id,
+          client_id: clientId,
           fb_user_id: userData.id,
           access_token: access_token,
           token_expires_at: tokenExpiresAt,
@@ -205,7 +221,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log("Successfully saved Facebook connection for user:", session.user.id);
+    console.log("Successfully saved Facebook connection for user:", clientId);
     console.log("Insert data returned:", insertData);
     const successUrl = `${redirectUri}/settings?fb=connected`;
     console.log("=== Facebook OAuth Callback Completed Successfully ===");
