@@ -127,6 +127,10 @@ export function SettingsSection() {
   const [fbLoading, setFbLoading] = useState(true);
   const searchParams = useSearchParams();
   const { user } = useAuth();
+  
+  // Extract search params values for useEffect dependencies
+  const fbStatus = searchParams.get("fb");
+  const fbMessage = searchParams.get("message");
 
   // Check Facebook connection status from Supabase
   useEffect(() => {
@@ -157,17 +161,15 @@ export function SettingsSection() {
   }, [user]);
 
   useEffect(() => {
-    const fbStatus = searchParams.get("fb");
-    const message = searchParams.get("message");
     if (fbStatus === "connected") {
       setFbConnected(true);
       setFbError(null);
       setActiveTab("integrations");
     } else if (fbStatus === "error") {
-      setFbError(message || "Failed to connect Facebook");
+      setFbError(fbMessage || "Failed to connect Facebook");
       setActiveTab("integrations");
     }
-  }, [searchParams]);
+  }, [fbStatus, fbMessage]);
 
   const handleSave = () => {
     setIsSaving(true);
@@ -288,7 +290,7 @@ export function SettingsSection() {
               <div className="space-y-2">
                 <Label htmlFor="timezone">Timezone</Label>
                 <Select defaultValue="pst">
-                  <SelectTrigger className="bg-secondary border-border w-full md:w-[300px]">
+                  <SelectTrigger className="bg-secondary border-border w-full md:w-75">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -328,7 +330,7 @@ export function SettingsSection() {
                   </div>
                 </div>
                 <Select defaultValue="usd">
-                  <SelectTrigger className="w-[120px] bg-secondary border-border">
+                  <SelectTrigger className="w-30 bg-secondary border-border">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
