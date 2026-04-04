@@ -517,8 +517,9 @@ export function SettingsSection() {
                             size="sm"
                             className="h-8 bg-accent hover:bg-accent/90 text-accent-foreground"
                             onClick={() => {
-                              if (integration.id === "facebook") {
-                                window.location.href = "/api/auth/facebook";
+                              if (integration.id === "facebook" && user?.id) {
+                                // Pass userId as query parameter to the OAuth initiation route
+                                window.location.href = `/api/auth/facebook?userId=${user.id}`;
                               }
                             }}
                           >
@@ -599,7 +600,10 @@ export function SettingsSection() {
                         size="sm"
                         className="h-8 bg-accent hover:bg-accent/90 text-accent-foreground"
                         onClick={() => {
-                          window.location.href = "/api/auth/facebook";
+                          if (user?.id) {
+                            // Pass userId as query parameter to the OAuth initiation route
+                            window.location.href = `/api/auth/facebook?userId=${user.id}`;
+                          }
                         }}
                         disabled={fbLoading}
                       >

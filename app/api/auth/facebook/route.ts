@@ -1,68 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { cookies } from "next/headers";
 
 export async function GET(request: NextRequest) {
   console.log("=== Facebook OAuth Initiation Started ===");
   try {
+    // Get userId from query parameters (passed from client-side)
+    const userId = request.nextUrl.searchParams.get("userId");
+    console.log("Query params - userId:", userId ? "present" : "missing");
+
+    if (!userId) {
+      console.error("No userId provided in query parameters");
+      return NextResponse.json(
+        { error: "Missing userId parameter" },
+        { status: 400 }
+      );
+    }
+
+    console.log("✓ Received userId from client:", userId);
+
+    // Get environment configuration
     const facebookAppId = process.env.FACEBOOK_APP_ID;
     const redirectUri = process.env.NEXT_PUBLIC_URL;
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     console.log("Environment check:", {
       facebookAppId: !!facebookAppId,
       redirectUri: !!redirectUri,
-      supabaseUrl: !!supabaseUrl,
-      supabaseKey: !!supabaseKey,
     });
 
-    if (!facebookAppId || !redirectUri || !supabaseUrl || !supabaseKey) {
-      console.error("Missing configuration");
+    if (!facebookAppId || !redirectUri) {
+      console.error("Missing Facebook configuration");
       return NextResponse.json(
         { error: "Missing Facebook configuration" },
         { status: 500 }
       );
     }
 
-    // Create Supabase client with request context to access cookies/auth
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      auth: {
-        persistSession: true,
-      },
-    });
-
-    // Get the session from the request cookies
-    // This reads the Supabase session token from browser cookies
-    const cookieStore = await cookies();
-    const sessionData = cookieStore.get("sb-auth-token");
-    console.log("Session cookie present:", !!sessionData);
-
-    // Try to get the user from getSession() which reads from cookies
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
-
-    console.log("Session check result:", {
-      hasSession: !!session,
-      hasUser: !!session?.user,
-      userId: session?.user?.id || "none",
-      sessionError: sessionError?.message || "none",
-    });
-
-    if (!session?.user) {
-      console.error("No authenticated user found");
-      console.log("Possible causes: session expired, user not logged in, or cookies not accessible");
-      const loginUrl = `${redirectUri}/login?next=/settings&error=Facebook%20connection%20requires%20login`;
-      console.log("Redirecting to login:", loginUrl);
-      return NextResponse.redirect(loginUrl);
-    }
-
-    const userId = session.user.id;
-    console.log("✓ Authenticated user for Facebook OAuth:", userId);
-
-    // Create state parameter containing the user ID
+    // Encode userId in state parameter
     const state = encodeState(userId);
     console.log("✓ Generated state parameter for user:", userId);
     console.log("State parameter (base64):", state.substring(0, 20) + "...");
