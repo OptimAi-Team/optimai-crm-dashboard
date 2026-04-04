@@ -127,6 +127,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Ensure we have name and email
+    const fbName = userData.name || "Unknown";
+    const fbEmail = userData.email || null;
+    console.log("FB Name extracted:", fbName);
+    console.log("FB Email extracted:", fbEmail || "not provided");
+
     // Fetch Facebook ad accounts and pages
     console.log("Fetching Facebook ad accounts for user:", userData.id);
     const adAccountsResponse = await fetch(
@@ -134,14 +140,24 @@ export async function GET(request: NextRequest) {
     );
     const adAccountsData = await adAccountsResponse.json();
     const adAccountIds = adAccountsData.data?.map((acc: any) => acc.id) || [];
-    console.log("Fetched ad accounts:", adAccountIds);
+    console.log("Fetched ad accounts count:", adAccountIds.length);
+    console.log("Ad account IDs:", adAccountIds);
 
+    console.log("Fetching Facebook pages for user:", userData.id);
     const pagesResponse = await fetch(
       `https://graph.facebook.com/v18.0/me/accounts?fields=id,name&access_token=${access_token}`
     );
     const pagesData = await pagesResponse.json();
+    
+    if (pagesResponse.ok && pagesData.data) {
+      console.log("Pages response data:", pagesData);
+    } else {
+      console.warn("Pages fetch response:", { status: pagesResponse.status, error: pagesData.error });
+    }
+    
     const pageIds = pagesData.data?.map((page: any) => page.id) || [];
-    console.log("Fetched pages:", pageIds);
+    console.log("Fetched pages count:", pageIds.length);
+    console.log("Page IDs:", pageIds);
 
     // Calculate token expiration
     const tokenExpiresIn = tokenData.expires_in || 5184000; // Default 60 days if not provided
@@ -169,17 +185,19 @@ export async function GET(request: NextRequest) {
     }
 
     const clientId = stateData.userId;
-    console.log("Extracted client_id from state:", clientId);
+    console.log("✓ Extracted user_id from state:", clientId);
 
     // Initialize Supabase client
     console.log("Initializing Supabase client...");
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Save Facebook connection to Supabase with proper column names
-    console.log("Attempting to insert/update facebook_connections for client_id:", clientId);
+    console.log("Attempting to insert/update facebook_connections for user_id:", clientId);
     const upsertPayload = {
-      client_id: clientId,
+      user_id: clientId,
       fb_user_id: userData.id,
+      fb_name: fbName,
+      fb_email: fbEmail,
       access_token: "***REDACTED***",
       token_expires_at: tokenExpiresAt,
       ad_account_ids: adAccountIds,
@@ -191,15 +209,17 @@ export async function GET(request: NextRequest) {
       .from("facebook_connections")
       .upsert(
         {
-          client_id: clientId,
+          user_id: clientId,
           fb_user_id: userData.id,
+          fb_name: fbName,
+          fb_email: fbEmail,
           access_token: access_token,
           token_expires_at: tokenExpiresAt,
           ad_account_ids: adAccountIds,
           page_ids: pageIds,
         },
         {
-          onConflict: "client_id",
+          onConflict: "user_id",
         }
       )
       .select();
@@ -225,8 +245,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(errorRedirect);
     }
 
-    console.log("✓ Successfully saved Facebook connection for user:", clientId);
-    console.log("Insert data returned:", insertData);
+    console.log("✓ Successfully saved Facebook connection for user_id:", clientId);
+    console.log("Saved data:", {
+      user_id: clientId,
+      fb_user_id: userData.id,
+      fb_name: fbName,
+      fb_email: fbEmail,
+      token_expires_at: tokenExpiresAt,
+      ad_account_ids_count: adAccountIds.length,
+      page_ids_count: pageIds.length,
+    });
     const successUrl = `${redirectUri}/?section=settings&fb=connected`;
     console.log("=== Facebook OAuth Callback Completed Successfully ===");
     console.log("Redirecting to:", successUrl);
