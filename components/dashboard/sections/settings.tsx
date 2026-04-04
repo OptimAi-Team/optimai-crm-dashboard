@@ -127,6 +127,7 @@ export function SettingsSection() {
   const [fbConnected, setFbConnected] = useState(false);
   const [fbError, setFbError] = useState<string | null>(null);
   const [fbLoading, setFbLoading] = useState(true);
+  const [fbSyncing, setFbSyncing] = useState(false);
   const searchParams = useSearchParams();
   const { user } = useAuth();
   
@@ -575,6 +576,38 @@ export function SettingsSection() {
                     <>
                       <span className="text-xs text-muted-foreground">Account synced</span>
                       <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8"
+                          onClick={async () => {
+                            if (user) {
+                              setFbSyncing(true);
+                              try {
+                                const response = await fetch("/api/facebook/sync", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ userId: user.id }),
+                                });
+                                const data = await response.json();
+                                if (!response.ok) {
+                                  setFbError(data.error || "Failed to sync Facebook data");
+                                } else {
+                                  setFbError(null);
+                                }
+                              } catch (error) {
+                                console.error("Sync error:", error);
+                                setFbError("Failed to sync Facebook data");
+                              } finally {
+                                setFbSyncing(false);
+                              }
+                            }
+                          }}
+                          disabled={fbSyncing}
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${fbSyncing ? "animate-spin" : ""}`} />
+                          {fbSyncing ? "Syncing..." : "Sync"}
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
