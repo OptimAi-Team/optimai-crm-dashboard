@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 export async function GET(request: NextRequest) {
+  console.log("=== Facebook OAuth Callback Started ===");
   try {
     const searchParams = request.nextUrl.searchParams;
     const code = searchParams.get("code");
     const error = searchParams.get("error");
     const errorDescription = searchParams.get("error_description");
+
+    console.log("Callback params:", { code: code ? "present" : "missing", error, errorDescription });
 
     // Handle errors from Facebook
     if (error) {
@@ -63,11 +66,22 @@ export async function GET(request: NextRequest) {
     const tokenUrl = new URL("https://graph.facebook.com/v18.0/oauth/access_token");
     tokenUrl.search = tokenParams.toString();
 
+    console.log("Exchanging code for access token...");
     const tokenResp = await fetch(tokenUrl.toString());
     const tokenData = await tokenResp.json();
 
+    console.log("Token response status:", tokenResp.status);
+    console.log("Token response (without access_token):", {
+      ...tokenData,
+      access_token: tokenData.access_token ? "***REDACTED***" : undefined,
+    });
+
     if (!tokenResp.ok || tokenData.error) {
-      console.error("Failed to exchange code for token:", tokenData);
+      console.error("Failed to exchange code for token:", {
+        status: tokenResp.status,
+        error: tokenData.error,
+        errorDescription: tokenData.error_description,
+      });
       return NextResponse.redirect(
         `${redirectUri}/settings?fb=error&message=${encodeURIComponent(
           tokenData.error?.message || "Failed to get access token"
@@ -85,62 +99,112 @@ export async function GET(request: NextRequest) {
     }
 
     // Get Facebook user info to link with Supabase user
+    console.log("Fetching Facebook user info...");
     const userResponse = await fetch(
       `https://graph.facebook.com/v18.0/me?fields=id,name,email&access_token=${access_token}`
     );
     const userData = await userResponse.json();
 
+    console.log("User info response status:", userResponse.status);
+    console.log("User info:", { id: userData.id, name: userData.name, email: userData.email });
+
     if (!userResponse.ok || userData.error) {
-      console.error("Failed to get Facebook user info:", userData);
+      console.error("Failed to get Facebook user info:", userResponse.status, userData.error);
       return NextResponse.redirect(
         `${redirectUri}/settings?fb=error&message=Failed to get user info`
       );
     }
 
     // Initialize Supabase client
+    console.log("Initializing Supabase client...");
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Get current user from Supabase auth
+    console.log("Checking authenticated session...");
     const {
       data: { session },
     } = await supabase.auth.getSession();
 
+    console.log("Session check:", {
+      hasSession: !!session,
+      hasUser: !!session?.user,
+      userId: session?.user?.id || "none",
+    });
+
     if (!session?.user) {
-      console.error("No authenticated user session");
+      console.error("No authenticated user session found");
       return NextResponse.redirect(
         `${redirectUri}/login?next=/settings&fb=error&message=Not authenticated`
       );
     }
 
-    // Save Facebook connection to Supabase
-    const { error: insertError } = await supabase
+    // Fetch Facebook ad accounts and pages
+    console.log("Fetching Facebook ad accounts for user:", userData.id);
+    const adAccountsResponse = await fetch(
+      `https://graph.facebook.com/v18.0/me/adaccounts?fields=id,name&access_token=${access_token}`
+    );
+    const adAccountsData = await adAccountsResponse.json();
+    const adAccountIds = adAccountsData.data?.map((acc: any) => acc.id) || [];
+    console.log("Fetched ad accounts:", adAccountIds);
+
+    const pagesResponse = await fetch(
+      `https://graph.facebook.com/v18.0/me/accounts?fields=id,name&access_token=${access_token}`
+    );
+    const pagesData = await pagesResponse.json();
+    const pageIds = pagesData.data?.map((page: any) => page.id) || [];
+    console.log("Fetched pages:", pageIds);
+
+    // Calculate token expiration
+    const tokenExpiresIn = tokenData.expires_in || 5184000; // Default 60 days if not provided
+    const tokenExpiresAt = new Date(Date.now() + tokenExpiresIn * 1000).toISOString();
+    console.log("Token expires at:", tokenExpiresAt);
+
+    // Save Facebook connection to Supabase with proper column names
+    console.log("Attempting to insert/update facebook_connections for client_id:", session.user.id);
+    const { data: insertData, error: insertError } = await supabase
       .from("facebook_connections")
       .upsert(
         {
-          user_id: session.user.id,
-          facebook_user_id: userData.id,
-          facebook_name: userData.name,
-          facebook_email: userData.email,
+          client_id: session.user.id,
+          fb_user_id: userData.id,
           access_token: access_token,
-          token_type: token_type,
-          connected_at: new Date().toISOString(),
+          token_expires_at: tokenExpiresAt,
+          ad_account_ids: adAccountIds,
+          page_ids: pageIds,
         },
         {
-          onConflict: "user_id",
+          onConflict: "client_id",
         }
-      );
+      )
+      .select();
+
+    console.log("Insert response:", { data: insertData, error: insertError });
 
     if (insertError) {
-      console.error("Failed to save Facebook connection:", insertError);
+      console.error("Failed to save Facebook connection to Supabase:", {
+        error: insertError,
+        errorCode: insertError.code,
+        errorMessage: insertError.message,
+        details: insertError.details,
+      });
       return NextResponse.redirect(
-        `${redirectUri}/settings?fb=error&message=Failed to save connection`
+        `${redirectUri}/settings?fb=error&message=${encodeURIComponent(
+          `Database error: ${insertError.message}`
+        )}`
       );
     }
 
+    console.log("Successfully saved Facebook connection for user:", session.user.id);
+    console.log("=== Facebook OAuth Callback Completed Successfully ===");
     // Redirect to settings page with success
     return NextResponse.redirect(`${redirectUri}/settings?fb=connected`);
   } catch (error) {
-    console.error("Facebook OAuth callback error:", error);
+    console.error("=== Facebook OAuth Callback Error ===");
+    console.error("Error details:", error);
+    if (error instanceof Error) {
+      console.error("Error message:", error.message);
+      console.error("Error stack:", error.stack);
+    }
     return NextResponse.redirect(
       `${process.env.NEXT_PUBLIC_URL}/settings?fb=error&message=Internal server error`
     );
