@@ -161,6 +161,16 @@ export async function GET(request: NextRequest) {
 
     // Save Facebook connection to Supabase with proper column names
     console.log("Attempting to insert/update facebook_connections for client_id:", session.user.id);
+    const upsertPayload = {
+      client_id: session.user.id,
+      fb_user_id: userData.id,
+      access_token: "***REDACTED***",
+      token_expires_at: tokenExpiresAt,
+      ad_account_ids: adAccountIds,
+      page_ids: pageIds,
+    };
+    console.log("Upsert payload (access_token redacted):", upsertPayload);
+
     const { data: insertData, error: insertError } = await supabase
       .from("facebook_connections")
       .upsert(
@@ -178,7 +188,8 @@ export async function GET(request: NextRequest) {
       )
       .select();
 
-    console.log("Insert response:", { data: insertData, error: insertError });
+    console.log("Insert response - data:", insertData);
+    console.log("Insert response - error:", insertError);
 
     if (insertError) {
       console.error("Failed to save Facebook connection to Supabase:", {
@@ -187,17 +198,20 @@ export async function GET(request: NextRequest) {
         errorMessage: insertError.message,
         details: insertError.details,
       });
+      const errorMessage = `Database error: ${insertError.message}`;
+      console.error("Redirecting with error:", `${redirectUri}/settings?fb=error&message=${encodeURIComponent(errorMessage)}`);
       return NextResponse.redirect(
-        `${redirectUri}/settings?fb=error&message=${encodeURIComponent(
-          `Database error: ${insertError.message}`
-        )}`
+        `${redirectUri}/settings?fb=error&message=${encodeURIComponent(errorMessage)}`
       );
     }
 
     console.log("Successfully saved Facebook connection for user:", session.user.id);
+    console.log("Insert data returned:", insertData);
+    const successUrl = `${redirectUri}/settings?fb=connected`;
     console.log("=== Facebook OAuth Callback Completed Successfully ===");
+    console.log("Redirecting to:", successUrl);
     // Redirect to settings page with success
-    return NextResponse.redirect(`${redirectUri}/settings?fb=connected`);
+    return NextResponse.redirect(successUrl);
   } catch (error) {
     console.error("=== Facebook OAuth Callback Error ===");
     console.error("Error details:", error);
