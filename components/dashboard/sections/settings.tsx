@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";import { supabase } from \"@/lib/supabase\";
+import { useAuth } from \"@/lib/auth-context\";import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +32,7 @@ import {
   Check,
   ExternalLink,
   Zap,
+  X,
 } from "lucide-react";
 
 const integrations = [
@@ -120,6 +122,52 @@ export function SettingsSection() {
   const [activeTab, setActiveTab] = useState("profile");
   const [notifications, setNotifications] = useState(notificationSettings);
   const [isSaving, setIsSaving] = useState(false);
+  const [fbConnected, setFbConnected] = useState(false);
+  const [fbError, setFbError] = useState<string | null>(null);
+  const [fbLoading, setFbLoading] = useState(true);
+  const searchParams = useSearchParams();
+  const { user } = useAuth();
+
+  // Check Facebook connection status from Supabase
+  useEffect(() => {
+    const checkFacebookConnection = async () => {
+      if (!user) return;
+      
+      try {
+        setFbLoading(true);
+        const { data, error } = await supabase
+          .from("facebook_connections")
+          .select("*")
+          .eq("user_id", user.id)
+          .single();
+
+        if (error && error.code !== "PGRST116") {
+          console.error("Error fetching Facebook connection:", error);
+        }
+        
+        setFbConnected(!!data);
+      } catch (error) {
+        console.error("Error checking Facebook connection:", error);
+      } finally {
+        setFbLoading(false);
+      }
+    };
+
+    checkFacebookConnection();
+  }, [user]);
+
+  useEffect(() => {
+    const fbStatus = searchParams.get("fb");
+    const message = searchParams.get("message");
+    if (fbStatus === "connected") {
+      setFbConnected(true);
+      setFbError(null);
+      setActiveTab("integrations");
+    } else if (fbStatus === "error") {
+      setFbError(message || "Failed to connect Facebook");
+      setActiveTab("integrations");
+    }
+  }, [searchParams]);
 
   const handleSave = () => {
     setIsSaving(true);
@@ -375,6 +423,28 @@ export function SettingsSection() {
 
         {/* Integrations Tab */}
         <TabsContent value="integrations" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          {/* Success Message */}
+          {fbConnected && (
+            <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20 text-green-500 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+              <Check className="w-5 h-5" />
+              <div>
+                <p className="font-medium">Facebook Connected!</p>
+                <p className="text-sm">Your Facebook account has been successfully connected.</p>
+              </div>
+            </div>
+          )}
+          
+          {/* Error Message */}
+          {fbError && (
+            <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+              <X className="w-5 h-5" />
+              <div>
+                <p className="font-medium">Connection Failed</p>
+                <p className="text-sm">{fbError}</p>
+              </div>
+            </div>
+          )}
+          
           <Card className="border-border bg-card">
             <CardHeader>
               <CardTitle className="text-base font-medium">Connected Services</CardTitle>
@@ -442,6 +512,11 @@ export function SettingsSection() {
                           <Button
                             size="sm"
                             className="h-8 bg-accent hover:bg-accent/90 text-accent-foreground"
+                            onClick={() => {
+                              if (integration.id === "facebook") {
+                                window.location.href = "/api/auth/facebook";
+                              }
+                            }}
                           >
                             Connect
                             <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
@@ -451,6 +526,85 @@ export function SettingsSection() {
                     </div>
                   </div>
                 ))}
+              </div>
+
+              {/* Facebook Ads Integration Card */}
+              <div
+                className={`p-4 rounded-lg border transition-all duration-300 animate-in fade-in slide-in-from-bottom-2 ${
+                  fbConnected
+                    ? "bg-secondary/50 border-border hover:border-accent/50"
+                    : "bg-secondary/20 border-border hover:border-muted-foreground/30"
+                }`}
+                style={{ animationDelay: `${integrations.length * 75}ms` }}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                        fbConnected ? "bg-accent/20" : "bg-muted"
+                      }`}
+                    >
+                      <Zap
+                        className={`w-5 h-5 ${
+                          fbConnected ? "text-accent" : "text-muted-foreground"
+                        }`}
+                      />
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">Facebook Ads</p>
+                      <p className="text-sm text-muted-foreground">Facebook ads and lead management</p>
+                    </div>
+                  </div>
+                  <Badge
+                    className={
+                      fbConnected
+                        ? "bg-accent/20 text-accent border-accent/30"
+                        : "bg-muted text-muted-foreground border-border"
+                    }
+                  >
+                    {fbLoading ? "Loading..." : fbConnected ? "Connected" : "Not connected"}
+                  </Badge>
+                </div>
+                <div className="mt-4 flex items-center justify-between">
+                  {fbConnected ? (
+                    <>
+                      <span className="text-xs text-muted-foreground">Account synced</span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 text-destructive hover:text-destructive"
+                          onClick={async () => {
+                            if (user) {
+                              await supabase
+                                .from("facebook_connections")
+                                .delete()
+                                .eq("user_id", user.id);
+                              setFbConnected(false);
+                            }
+                          }}
+                        >
+                          Disconnect
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-xs text-muted-foreground">Not configured</span>
+                      <Button
+                        size="sm"
+                        className="h-8 bg-accent hover:bg-accent/90 text-accent-foreground"
+                        onClick={() => {
+                          window.location.href = "/api/auth/facebook";
+                        }}
+                        disabled={fbLoading}
+                      >
+                        Connect
+                        <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
