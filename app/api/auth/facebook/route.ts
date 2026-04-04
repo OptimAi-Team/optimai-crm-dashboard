@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
 
 export async function GET(request: NextRequest) {
   console.log("=== Facebook OAuth Initiation Started ===");
@@ -9,33 +10,62 @@ export async function GET(request: NextRequest) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+    console.log("Environment check:", {
+      facebookAppId: !!facebookAppId,
+      redirectUri: !!redirectUri,
+      supabaseUrl: !!supabaseUrl,
+      supabaseKey: !!supabaseKey,
+    });
+
     if (!facebookAppId || !redirectUri || !supabaseUrl || !supabaseKey) {
-      console.error("Missing configuration:", { facebookAppId: !!facebookAppId, redirectUri: !!redirectUri, supabaseUrl: !!supabaseUrl, supabaseKey: !!supabaseKey });
+      console.error("Missing configuration");
       return NextResponse.json(
         { error: "Missing Facebook configuration" },
         { status: 500 }
       );
     }
 
-    // Get the authenticated user
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // Create Supabase client with request context to access cookies/auth
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: true,
+      },
+    });
+
+    // Get the session from the request cookies
+    // This reads the Supabase session token from browser cookies
+    const cookieStore = await cookies();
+    const sessionData = cookieStore.get("sb-auth-token");
+    console.log("Session cookie present:", !!sessionData);
+
+    // Try to get the user from getSession() which reads from cookies
     const {
       data: { session },
+      error: sessionError,
     } = await supabase.auth.getSession();
 
+    console.log("Session check result:", {
+      hasSession: !!session,
+      hasUser: !!session?.user,
+      userId: session?.user?.id || "none",
+      sessionError: sessionError?.message || "none",
+    });
+
     if (!session?.user) {
-      console.error("No authenticated user found - user must be logged in to connect Facebook");
-      return NextResponse.redirect(
-        `${redirectUri}/login?next=/settings&error=Facebook connection requires login`
-      );
+      console.error("No authenticated user found");
+      console.log("Possible causes: session expired, user not logged in, or cookies not accessible");
+      const loginUrl = `${redirectUri}/login?next=/settings&error=Facebook%20connection%20requires%20login`;
+      console.log("Redirecting to login:", loginUrl);
+      return NextResponse.redirect(loginUrl);
     }
 
     const userId = session.user.id;
-    console.log("Authenticated user for Facebook OAuth:", userId);
+    console.log("✓ Authenticated user for Facebook OAuth:", userId);
 
     // Create state parameter containing the user ID
     const state = encodeState(userId);
-    console.log("Generated state parameter for user:", userId);
+    console.log("✓ Generated state parameter for user:", userId);
+    console.log("State parameter (base64):", state.substring(0, 20) + "...");
 
     // Required permissions for the OAuth flow
     const permissions = [
@@ -58,13 +88,18 @@ export async function GET(request: NextRequest) {
     facebookAuthUrl.searchParams.append("response_type", "code");
     facebookAuthUrl.searchParams.append("state", state);
 
-    console.log("Redirecting to Facebook OAuth with user ID in state");
-    return NextResponse.redirect(facebookAuthUrl.toString());
+    const fbUrl = facebookAuthUrl.toString();
+    console.log("✓ Built Facebook OAuth URL");
+    console.log("Callback URI:", `${redirectUri}/api/auth/facebook/callback`);
+    console.log("Scope:", permissions.join(","));
+    console.log("=== Redirecting to Facebook OAuth ===");
+    return NextResponse.redirect(fbUrl);
   } catch (error) {
     console.error("=== Facebook OAuth Initiation Error ===");
-    console.error("Error:", error);
+    console.error("Error object:", error);
     if (error instanceof Error) {
       console.error("Error message:", error.message);
+      console.error("Error stack:", error.stack);
     }
     return NextResponse.json(
       { error: "Failed to initiate Facebook OAuth" },
