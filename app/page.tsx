@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { Header } from "@/components/dashboard/header";
@@ -21,10 +21,30 @@ import { SettingsSection } from "@/components/dashboard/sections/settings";
 export type Section = "overview" | "pipeline" | "deals" | "customers" | "team" | "forecasting" | "reports" | "brain-dump" | "vault" | "mind-graph" | "ask-brain" | "settings";
 
 export default function Dashboard() {
+  return (
+    <Suspense fallback={<DashboardLoading />}>
+      <DashboardContent />
+    </Suspense>
+  );
+}
+
+function DashboardLoading() {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="text-center">
+        <div className="w-8 h-8 border-4 border-border border-t-accent rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    </div>
+  );
+}
+
+function DashboardContent() {
   const [activeSection, setActiveSection] = useState<Section>("overview");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { user, loading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -32,6 +52,14 @@ export default function Dashboard() {
       router.push("/login");
     }
   }, [user, loading, router]);
+
+  // Check for section query parameter and set active section
+  useEffect(() => {
+    const section = searchParams.get("section");
+    if (section && ["overview", "pipeline", "deals", "customers", "team", "forecasting", "reports", "brain-dump", "vault", "mind-graph", "ask-brain", "settings"].includes(section)) {
+      setActiveSection(section as Section);
+    }
+  }, [searchParams]);
 
   if (loading) {
     return (
