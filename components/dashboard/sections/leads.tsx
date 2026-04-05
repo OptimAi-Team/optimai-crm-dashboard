@@ -29,6 +29,7 @@ export function LeadsSection() {
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
         const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
+        console.log("=== Leads Overview: Fetching leads from Supabase ===");
         const { data, error } = await supabase
           .from("leads")
           .select("*")
@@ -36,8 +37,20 @@ export function LeadsSection() {
           .lte("created_at", monthEnd.toISOString())
           .order("created_at", { ascending: false });
 
-        if (error) throw error;
+        console.log("Leads Overview: Query response:", { dataCount: data?.length || 0, hasError: !!error });
+        
+        if (error) {
+          console.error("❌ Leads Overview: Supabase error:", {
+            message: error.message,
+            code: error.code,
+            details: error.details,
+            hint: error.hint,
+            status: error.status,
+          });
+          throw error;
+        }
 
+        console.log("✅ Leads Overview: Successfully fetched", data?.length || 0, "leads");
         setLeads(data || []);
 
         // Generate chart data (leads per day)

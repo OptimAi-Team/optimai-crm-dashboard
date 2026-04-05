@@ -133,15 +133,32 @@ export function DealsSection() {
   useEffect(() => {
     const fetchLeads = async () => {
       try {
+        console.log("=== Deals: Fetching leads from Supabase ===");
         const { data, error } = await supabase
           .from("leads")
           .select("*")
           .order("created_at", { ascending: false });
 
-        if (error) throw error;
+        console.log("Deals: Query response:", { dataCount: data?.length || 0, hasError: !!error });
+        
+        if (error) {
+          console.error("❌ Deals: Supabase error:", {
+            message: error.message,
+            code: error.code,
+            details: error.details,
+            hint: error.hint,
+            status: error.status,
+          });
+          throw error;
+        }
+        
+        console.log("✅ Deals: Successfully fetched", data?.length || 0, "leads");
         setLeads(data || []);
       } catch (error) {
-        console.error("Error fetching leads:", error);
+        console.error("❌ Deals: Error fetching leads:", error);
+        if (error instanceof Error) {
+          console.error("Deals: Error message:", error.message);
+        }
       } finally {
         setLoading(false);
       }
