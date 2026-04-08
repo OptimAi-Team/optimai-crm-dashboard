@@ -27,7 +27,7 @@ export type Lead = {
   zip_code: string;
   utm_campaign: string;
   lead_score_value: number;
-  lead_score: "hot" | "warm" | "cold";
+  lead_score: "Hot" | "Warm" | "Cold" | "hot" | "warm" | "cold";
   created_at: string;
   credit_score?: string;
   timeline?: string;
