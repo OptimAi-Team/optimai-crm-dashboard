@@ -70,7 +70,7 @@ export default function RegisterPage() {
       .replace(/[^a-z0-9-]/g, "");
 
     try {
-      await fetch("https://webhook-production-64b6.up.railway.app/webhook/client-discovery", {
+      await fetch("/api/onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
