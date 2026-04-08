@@ -66,8 +66,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password,
       });
       if (error) throw error;
-      // Redirect to login after successful signup
-      router.push("/login");
     } catch (error) {
       console.error("Sign up error:", error);
       throw error;
