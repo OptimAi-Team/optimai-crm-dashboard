@@ -546,7 +546,7 @@ export function DealsSection() {
                         </span>
                       </td>
                       <td className="py-4 px-4">
-                        <div className={cn("inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border", scoreColors[lead.lead_score].bg, scoreColors[lead.lead_score].text)}>
+                        <div className={cn("inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border", scoreColors[lead.lead_score.toLowerCase()]?.bg ?? "bg-gray-500/10", scoreColors[lead.lead_score.toLowerCase()]?.text ?? "text-gray-500")}>
                           <span className="w-2 h-2 rounded-full bg-current"></span>
                           {lead.lead_score.toUpperCase()}
                         </div>
