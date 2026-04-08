@@ -276,7 +276,7 @@ export default function RegisterPage() {
               </label>
               <input
                 id="website"
-                type="url"
+                type="text"
                 placeholder="https://yourdealership.com"
                 value={website}
                 onChange={(e) => setWebsite(e.target.value)}
