@@ -77,6 +77,7 @@ export default function RegisterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: dealershipName,
+          email: email,
           access_code: accessCode,
           phone,
           website,
