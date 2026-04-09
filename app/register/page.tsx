@@ -19,6 +19,7 @@ export default function RegisterPage() {
 
   // Step 2 fields
   const [dealershipName, setDealershipName] = useState("");
+  const [accessCode, setAccessCode] = useState("");
   const [phone, setPhone] = useState("");
   const [website, setWebsite] = useState("");
   const [location, setLocation] = useState("");
@@ -76,6 +77,7 @@ export default function RegisterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: dealershipName,
+          access_code: accessCode,
           phone,
           website,
           location,
@@ -269,6 +271,20 @@ export default function RegisterPage() {
                 value={dealershipName}
                 onChange={(e) => setDealershipName(e.target.value)}
                 required
+                className="w-full h-10 px-4 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-accent transition-all duration-200"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="accessCode" className="text-sm font-medium text-foreground">
+                Dealership Access Code (if joining existing dealership - leave empty if registering new dealership)
+              </label>
+              <input
+                id="accessCode"
+                type="text"
+                placeholder=""
+                value={accessCode}
+                onChange={(e) => setAccessCode(e.target.value)}
                 className="w-full h-10 px-4 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-accent transition-all duration-200"
               />
             </div>
