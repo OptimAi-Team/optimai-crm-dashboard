@@ -12,6 +12,7 @@ export default function RegisterPage() {
   const [step, setStep] = useState<Step>(1);
 
   // Step 1 fields
+  const [contactName, setContactName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -78,6 +79,7 @@ export default function RegisterPage() {
           phone,
           website,
           location,
+          contact_name: contactName,
           monthly_budget: monthlyBudget,
           client_id: clientId,
           ad_account_id: "pending",
@@ -168,6 +170,21 @@ export default function RegisterPage() {
         {/* Step 1: Account creation */}
         {step === 1 && (
           <form onSubmit={handleStep1} className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="contactName" className="text-sm font-medium text-foreground">
+                Full Name
+              </label>
+              <input
+                id="contactName"
+                type="text"
+                placeholder="Jane Smith"
+                value={contactName}
+                onChange={(e) => setContactName(e.target.value)}
+                required
+                className="w-full h-10 px-4 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-accent transition-all duration-200"
+              />
+            </div>
+
             <div className="space-y-2">
               <label htmlFor="email" className="text-sm font-medium text-foreground">
                 Email
