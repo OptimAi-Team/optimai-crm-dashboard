@@ -74,7 +74,7 @@ export default function RegisterPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          dealership_name: dealershipName,
+          name: dealershipName,
           phone,
           website,
           location,
