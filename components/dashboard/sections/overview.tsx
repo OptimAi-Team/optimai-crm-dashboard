@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { useAuth } from "@/lib/auth-context";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import {
   BarChart,
@@ -17,33 +16,18 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { Users, Flame, DollarSign, Car } from "lucide-react";
-
-interface VehicleRow {
-  vehicle_name: string;
-  leads: number;
-  spend: number;
-  client_id: string;
-}
+import { Users, Flame, Star, CalendarCheck } from "lucide-react";
 
 interface OverviewData {
   totalLeads: number;
   hotLeads: number;
-  costPerLead: number;
-  bestVehicle: string;
+  avgLeadScore: number;
+  leadsToday: number;
   leadsPerDay: Array<{ day: string; leads: number }>;
   scoreBreakdown: Array<{ name: string; value: number; color: string }>;
-  topVehicles: VehicleRow[];
 }
 
-const SCORE_COLORS: Record<string, string> = {
-  Hot: "#ef4444",
-  Warm: "#f59e0b",
-  Cold: "#3b82f6",
-};
-
 export function OverviewSection() {
-  const { user } = useAuth();
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -54,57 +38,33 @@ export function OverviewSection() {
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
         const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
-        // Resolve client_id from the users table by the authenticated user's email
-        let clientId: string | null = null;
-        if (user?.email) {
-          const { data: userRow } = await supabase
-            .from("users")
-            .select("client_id")
-            .eq("email", user.email)
-            .single();
-          clientId = userRow?.client_id ?? null;
-        }
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
 
-        // Build campaign and vehicle queries — filter by client_id when available
-        const campaignQuery = supabase
-          .from("ad_campaigns")
-          .select("spend, client_id");
-        const vehicleQuery = supabase
-          .from("vehicle_performance")
-          .select("vehicle_name, leads, spend, client_id")
-          .order("leads", { ascending: false });
+        const { data: leadsData } = await supabase
+          .from("leads")
+          .select("id, lead_score, lead_score_value, created_at")
+          .gte("created_at", monthStart.toISOString())
+          .lte("created_at", monthEnd.toISOString());
 
-        if (clientId) {
-          campaignQuery.eq("client_id", clientId);
-          vehicleQuery.eq("client_id", clientId);
-        }
-
-        // Fetch leads, ad_campaigns, and vehicle_performance in parallel
-        const [leadsRes, campaignsRes, vehiclesRes] = await Promise.all([
-          supabase
-            .from("leads")
-            .select("id, lead_score, created_at")
-            .gte("created_at", monthStart.toISOString())
-            .lte("created_at", monthEnd.toISOString()),
-          campaignQuery,
-          vehicleQuery,
-        ]);
-
-        const leads = leadsRes.data || [];
-        const campaigns = campaignsRes.data || [];
-        const vehicles = vehiclesRes.data || [];
+        const leads = leadsData || [];
 
         // KPIs
         const totalLeads = leads.length;
         const hotLeads = leads.filter(
           (l) => l.lead_score?.toLowerCase() === "hot"
         ).length;
-        const totalSpend = campaigns.reduce(
-          (acc: number, c: { spend: number }) => acc + (c.spend || 0),
-          0
-        );
-        const costPerLead = totalLeads > 0 ? totalSpend / totalLeads : 0;
-        const bestVehicle = vehicles.length > 0 ? vehicles[0].vehicle_name : "—";
+        const leadsToday = leads.filter((l) => {
+          const t = new Date(l.created_at).getTime();
+          return t >= todayStart.getTime() && t < todayEnd.getTime();
+        }).length;
+        const avgLeadScore =
+          totalLeads > 0
+            ? Math.round(
+                leads.reduce((acc, l) => acc + (l.lead_score_value || 0), 0) /
+                  totalLeads
+              )
+            : 0;
 
         // Leads per day
         const daysInMonth = monthEnd.getDate();
@@ -137,11 +97,10 @@ export function OverviewSection() {
         setData({
           totalLeads,
           hotLeads,
-          costPerLead,
-          bestVehicle,
+          avgLeadScore,
+          leadsToday,
           leadsPerDay,
           scoreBreakdown,
-          topVehicles: vehicles.slice(0, 5),
         });
       } catch (err) {
         console.error("Overview fetch error:", err);
@@ -190,23 +149,19 @@ export function OverviewSection() {
           delay={1}
         />
         <MetricCard
-          title="Cost Per Lead"
-          value={
-            data.costPerLead > 0
-              ? `$${data.costPerLead.toFixed(2)}`
-              : "—"
-          }
-          change="spend ÷ leads"
+          title="Avg Lead Score"
+          value={String(data.avgLeadScore)}
+          change="avg score value"
           changeType="neutral"
-          icon={DollarSign}
+          icon={Star}
           delay={2}
         />
         <MetricCard
-          title="Best Performing Vehicle"
-          value={data.bestVehicle}
-          change="by lead count"
-          changeType="positive"
-          icon={Car}
+          title="New Leads Today"
+          value={String(data.leadsToday)}
+          change="today"
+          changeType="neutral"
+          icon={CalendarCheck}
           delay={3}
         />
       </div>
@@ -328,52 +283,6 @@ export function OverviewSection() {
         </div>
       </div>
 
-      {/* Top 5 Vehicles Table */}
-      <div className="bg-card border border-border rounded-xl p-5 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200">
-        <h3 className="text-base font-semibold text-foreground mb-1">
-          Top Vehicles by Leads
-        </h3>
-        <p className="text-sm text-muted-foreground mb-5">
-          Top 5 from vehicle_performance
-        </p>
-        {data.topVehicles.length > 0 ? (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left py-2 pr-4 text-muted-foreground font-medium">
-                  Vehicle
-                </th>
-                <th className="text-right py-2 pr-4 text-muted-foreground font-medium">
-                  Leads
-                </th>
-                <th className="text-right py-2 text-muted-foreground font-medium">
-                  Spend
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.topVehicles.map((v, i) => (
-                <tr
-                  key={`${v.vehicle_name}-${i}`}
-                  className="border-b border-border/50 last:border-0"
-                >
-                  <td className="py-3 pr-4 text-foreground font-medium">
-                    {v.vehicle_name}
-                  </td>
-                  <td className="py-3 pr-4 text-right text-foreground">
-                    {v.leads}
-                  </td>
-                  <td className="py-3 text-right text-muted-foreground">
-                    {v.spend != null ? `$${Number(v.spend).toLocaleString()}` : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="text-muted-foreground text-sm">No vehicle data found.</p>
-        )}
-      </div>
     </div>
   );
 }
