@@ -248,6 +248,34 @@ export async function GET(request: NextRequest) {
       ad_account_ids_count: adAccountIds.length,
       page_ids_count: pageIds.length,
     });
+
+    // ── Notify n8n of the new Facebook auth handshake ─────────────────────
+    // Fires after Supabase write succeeds. A failure here is non-fatal —
+    // the OAuth connection is already saved; we just log the error.
+    try {
+      const handshakePayload = {
+        client_id: authUserId,
+        access_token: access_token,
+        ad_account_id: adAccountIds[0] ?? null,
+      };
+      console.log("Sending Facebook auth handshake to n8n...");
+      const handshakeRes = await fetch(
+        "https://primary-gaxt-production.up.railway.app/webhook-test/facebook-auth-handshake",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(handshakePayload),
+        }
+      );
+      if (!handshakeRes.ok) {
+        console.error("n8n handshake non-OK response:", handshakeRes.status, await handshakeRes.text());
+      } else {
+        console.log("✓ n8n handshake delivered successfully");
+      }
+    } catch (handshakeErr) {
+      console.error("n8n handshake fetch failed (non-fatal):", handshakeErr);
+    }
+
     const successUrl = `${redirectUri}/?section=settings&fb=connected`;
     console.log("=== Facebook OAuth Callback Completed Successfully ===");
     console.log("Redirecting to:", successUrl);
