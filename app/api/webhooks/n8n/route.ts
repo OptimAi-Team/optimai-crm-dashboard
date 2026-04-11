@@ -75,18 +75,6 @@ export async function POST(request: NextRequest) {
     auth: { persistSession: false },
   });
 
-  // ── Re-engagement fields ──────────────────────────────────────────────────
-  // Always stamped on every upsert:
-  //   • status      → 'new'   so the salesperson sees it as a fresh priority
-  //   • updated_at  → now()   so it sorts to the top of the dashboard
-  //   • notes       → human-readable audit trail of the last submission
-  const now = new Date();
-  const submittedAt = now.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-
   // ── Build row ─────────────────────────────────────────────────────────────
   const row: Record<string, unknown> = {
     user_id,
@@ -98,10 +86,9 @@ export async function POST(request: NextRequest) {
     utm_campaign: payload.utm_campaign ?? "",
     lead_score,
     lead_score_value: payload.lead_score_value ?? 50,
-    // Re-engagement fields — correct for new inserts AND conflict updates
     status: "new",
-    updated_at: now.toISOString(),
-    notes: `Last submitted via n8n on ${submittedAt}`,
+    updated_at: new Date().toISOString(),
+    notes: "Last submitted via n8n on " + new Date().toLocaleDateString(),
   };
 
   if (payload.down_payment !== undefined) row.down_payment = payload.down_payment;
@@ -109,30 +96,31 @@ export async function POST(request: NextRequest) {
   if (payload.timeline !== undefined) row.timeline = payload.timeline;
   if (payload.retailer_item_id !== undefined) row.retailer_item_id = payload.retailer_item_id;
 
-  // ── Upsert ────────────────────────────────────────────────────────────────
-  // Conflict resolution priority:
-  //   1. retailer_item_id  — Facebook lead ID, globally unique per platform
-  //   2. (phone, user_id)  — deduplicate/re-engage n8n leads by phone per dealer
-  // Both require a matching UNIQUE constraint in Postgres (see SQL comment below).
-  const conflictTarget = payload.retailer_item_id
-    ? "retailer_item_id"
-    : "phone,user_id";
-
-  const { error: dbError } = await supabase
+  // ── Upsert with re-engagement logic ───────────────────────────────────────
+  const { data, error: dbError } = await supabase
     .from("leads")
-    .upsert(row, { onConflict: conflictTarget });
+    .upsert(row, {
+      onConflict: "phone,user_id",
+      ignoreDuplicates: false,
+    });
 
   if (dbError) {
     console.error("[n8n-webhook] Database error:", {
       message: dbError.message,
       code: dbError.code,
       hint: dbError.hint,
+      details: dbError.details,
     });
     return NextResponse.json(
-      { error: `Database error: ${dbError.message}` },
+      {
+        error: dbError.message,
+        code: dbError.code,
+        hint: dbError.hint,
+        details: dbError.details,
+      },
       { status: 500 }
     );
   }
 
-  return NextResponse.json({ success: true }, { status: 200 });
+  return NextResponse.json({ success: true, data }, { status: 200 });
 }
