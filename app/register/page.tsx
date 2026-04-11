@@ -27,7 +27,8 @@ export default function RegisterPage() {
 
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { signUp, user, loading: authLoading } = useAuth();
+  const [isExistingUser, setIsExistingUser] = useState(false);
+  const { signUp, signIn, user, loading: authLoading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -39,6 +40,20 @@ export default function RegisterPage() {
   const handleStep1 = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    // Existing-user mode: sign in instead of sign up
+    if (isExistingUser) {
+      setLoading(true);
+      try {
+        await signIn(email, password);
+        // Auth context redirects on success via the useEffect above
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Invalid password. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
 
     if (password !== confirmPassword) {
       setError("Passwords do not match");
@@ -54,7 +69,14 @@ export default function RegisterPage() {
       await signUp(email, password);
       setStep(2);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to register");
+      const message = err instanceof Error ? err.message : "Failed to register";
+      // "User already registered" → smart transition to sign-in mode
+      if (message.toLowerCase().includes("already registered") || message.toLowerCase().includes("already exists")) {
+        setIsExistingUser(true);
+        setError("");
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -170,24 +192,35 @@ export default function RegisterPage() {
           })}
         </div>
 
-        {/* Step 1: Account creation */}
+        {/* Step 1: Account creation / Smart sign-in transition */}
         {step === 1 && (
           <form onSubmit={handleStep1} className="space-y-4">
-            <div className="space-y-2">
-              <label htmlFor="contactName" className="text-sm font-medium text-foreground">
-                Full Name
-              </label>
-              <input
-                id="contactName"
-                type="text"
-                placeholder="Jane Smith"
-                value={contactName}
-                onChange={(e) => setContactName(e.target.value)}
-                required
-                className="w-full h-10 px-4 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-accent transition-all duration-200"
-              />
-            </div>
+            {/* Welcome-back banner — shown only after smart transition */}
+            {isExistingUser && (
+              <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm">
+                Welcome back! Enter your password to continue to your dashboard.
+              </div>
+            )}
 
+            {/* Full Name — hidden in sign-in mode */}
+            {!isExistingUser && (
+              <div className="space-y-2">
+                <label htmlFor="contactName" className="text-sm font-medium text-foreground">
+                  Full Name
+                </label>
+                <input
+                  id="contactName"
+                  type="text"
+                  placeholder="Jane Smith"
+                  value={contactName}
+                  onChange={(e) => setContactName(e.target.value)}
+                  required
+                  className="w-full h-10 px-4 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-accent transition-all duration-200"
+                />
+              </div>
+            )}
+
+            {/* Email — always visible, read-only in sign-in mode */}
             <div className="space-y-2">
               <label htmlFor="email" className="text-sm font-medium text-foreground">
                 Email
@@ -199,10 +232,14 @@ export default function RegisterPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full h-10 px-4 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-accent transition-all duration-200"
+                disabled={isExistingUser}
+                className={`w-full h-10 px-4 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-accent transition-all duration-200 ${
+                  isExistingUser ? "opacity-60 cursor-not-allowed" : ""
+                }`}
               />
             </div>
 
+            {/* Password — always visible */}
             <div className="space-y-2">
               <label htmlFor="password" className="text-sm font-medium text-foreground">
                 Password
@@ -218,20 +255,23 @@ export default function RegisterPage() {
               />
             </div>
 
-            <div className="space-y-2">
-              <label htmlFor="confirmPassword" className="text-sm font-medium text-foreground">
-                Confirm Password
-              </label>
-              <input
-                id="confirmPassword"
-                type="password"
-                placeholder="••••••••"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                className="w-full h-10 px-4 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-accent transition-all duration-200"
-              />
-            </div>
+            {/* Confirm Password — hidden in sign-in mode */}
+            {!isExistingUser && (
+              <div className="space-y-2">
+                <label htmlFor="confirmPassword" className="text-sm font-medium text-foreground">
+                  Confirm Password
+                </label>
+                <input
+                  id="confirmPassword"
+                  type="password"
+                  placeholder="••••••••"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  className="w-full h-10 px-4 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-accent transition-all duration-200"
+                />
+              </div>
+            )}
 
             {error && (
               <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-sm">
@@ -244,16 +284,32 @@ export default function RegisterPage() {
               disabled={loading}
               className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-medium h-10"
             >
-              {loading ? "Creating account..." : "Continue"}
+              {loading
+                ? isExistingUser ? "Signing in..." : "Creating account..."
+                : isExistingUser ? "Sign In to OptimAi" : "Continue"}
             </Button>
 
+            {/* Footer link — swap text based on mode */}
             <div className="text-center">
-              <p className="text-sm text-muted-foreground">
-                Already have an account?{" "}
-                <Link href="/login" className="text-accent hover:text-accent/80 font-medium transition-colors">
-                  Sign in
-                </Link>
-              </p>
+              {isExistingUser ? (
+                <p className="text-sm text-muted-foreground">
+                  Not you?{" "}
+                  <button
+                    type="button"
+                    onClick={() => { setIsExistingUser(false); setError(""); setPassword(""); }}
+                    className="text-accent hover:text-accent/80 font-medium transition-colors"
+                  >
+                    Use a different email
+                  </button>
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Already have an account?{" "}
+                  <Link href="/login" className="text-accent hover:text-accent/80 font-medium transition-colors">
+                    Sign in
+                  </Link>
+                </p>
+              )}
             </div>
           </form>
         )}
