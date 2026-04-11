@@ -17,6 +17,44 @@ import {
 
 const supabase = createClientSideClient();
 
+// Returns the appropriate badge for a lead row.
+// 'new' + under 24 h  → bright green NEW
+// 'new' + over 24 h   → orange FOLLOW UP (decays automatically, no cron needed)
+// hot / warm / cold   → standard score badge
+function getLeadBadge(status: string | undefined, created_at: string) {
+  if (status === "new") {
+    const ageMs = Date.now() - new Date(created_at).getTime();
+    const isUnder24h = ageMs < 24 * 60 * 60 * 1000;
+
+    if (isUnder24h) {
+      return (
+        <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold">
+          NEW
+        </Badge>
+      );
+    }
+    return (
+      <Badge className="bg-orange-500/20 text-orange-400 border border-orange-500/30 font-semibold">
+        FOLLOW UP
+      </Badge>
+    );
+  }
+
+  const scoreStyles: Record<string, string> = {
+    hot:  "bg-red-500/20 text-red-400 border-red-500/30",
+    warm: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+    cold: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  };
+  const normalised = (status ?? "warm").toLowerCase();
+  const cls = scoreStyles[normalised] ?? "bg-secondary text-muted-foreground border-border";
+
+  return (
+    <Badge className={`border ${cls}`}>
+      {(status ?? "warm").toUpperCase()}
+    </Badge>
+  );
+}
+
 export function LeadsSection() {
   const { user } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -85,6 +123,7 @@ export function LeadsSection() {
       : 0;
 
   return (
+    <div className="space-y-6">
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Left: Leads Stats Cards */}
       <div className="space-y-4">
@@ -168,6 +207,71 @@ export function LeadsSection() {
           </CardContent>
         </Card>
       </div>
+    </div>
+
+      {/* Leads Table */}
+      <Card className="border-border bg-card">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg">All Leads This Month</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="h-24 flex items-center justify-center text-muted-foreground">
+              Loading...
+            </div>
+          ) : leads.length === 0 ? (
+            <div className="h-24 flex items-center justify-center text-muted-foreground text-sm">
+              No leads this month.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground">
+                    <th className="text-left px-4 py-3 font-medium">Name</th>
+                    <th className="text-left px-4 py-3 font-medium">Phone</th>
+                    <th className="text-left px-4 py-3 font-medium">Email</th>
+                    <th className="text-left px-4 py-3 font-medium">Platform</th>
+                    <th className="text-left px-4 py-3 font-medium">Status</th>
+                    <th className="text-left px-4 py-3 font-medium">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leads.map((lead) => (
+                    <tr
+                      key={lead.id}
+                      className="border-b border-border/50 hover:bg-secondary/50 transition-colors"
+                    >
+                      <td className="px-4 py-3 font-medium text-foreground">
+                        {lead.full_name}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {lead.phone || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {lead.email || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground capitalize">
+                        {lead.platform || "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        {getLeadBadge(lead.status, lead.created_at)}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                        {new Date(lead.created_at).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
