@@ -28,7 +28,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { supabase, type Lead } from "@/lib/supabase";
+import { createClientSideClient, type Lead } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth-context";
+
+const supabase = createClientSideClient();
 
 const scoreColors: Record<string, string> = {
   hot: "bg-red-500/20 text-red-700 border-red-500/30 dark:text-red-400",
@@ -168,6 +171,7 @@ const getDateRangeFilter = (period: string): { start: Date; end: Date } => {
 };
 
 export function CustomersSection() {
+  const { user } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -177,21 +181,14 @@ export function CustomersSection() {
 
   // Fetch and subscribe to real-time updates from Supabase
   useEffect(() => {
+    if (!user) return;
     const fetchLeads = async () => {
       try {
-        console.log("=== Fetching leads from Supabase ===");
-        console.log("Supabase client state:", supabase);
-        
-        // Test the connection first
-        const { data: testData, error: testError } = await supabase.auth.getSession();
-        console.log("Auth session check - Error:", testError, "Data:", testData);
-
         const { data, error } = await supabase
           .from("leads")
           .select("*")
+          .eq("user_id", user.id)
           .order("created_at", { ascending: false });
-
-        console.log("Query response:", { data, error });
 
         if (error) {
           console.error("❌ Supabase error details:", {

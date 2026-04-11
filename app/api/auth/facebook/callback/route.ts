@@ -43,14 +43,14 @@ export async function GET(request: NextRequest) {
     const facebookAppSecret = process.env.FACEBOOK_APP_SECRET;
     const redirectUri = process.env.NEXT_PUBLIC_URL;
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (
       !facebookAppId ||
       !facebookAppSecret ||
       !redirectUri ||
       !supabaseUrl ||
-      !supabaseKey
+      !serviceRoleKey
     ) {
       console.error("Missing environment variables");
       return NextResponse.json(
@@ -60,15 +60,6 @@ export async function GET(request: NextRequest) {
     }
 
     // Exchange authorization code for access token
-    const tokenResponse = await fetch(
-      "https://graph.facebook.com/v18.0/oauth/access_token",
-      {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      }
-    );
-
-    // Note: Facebook OAuth token endpoint actually uses query parameters, not POST body
     const tokenParams = new URLSearchParams();
     tokenParams.append("client_id", facebookAppId);
     tokenParams.append("client_secret", facebookAppSecret);
@@ -184,22 +175,24 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const clientId = stateData.userId;
-    console.log("✓ Extracted user_id from state:", clientId);
+    // authUserId is the Supabase auth.uid() — distinct from dealership slug (client_id)
+    const authUserId = stateData.userId;
+    console.log("✓ Extracted authUserId from state:", authUserId);
 
-    // Initialize Supabase client
-    console.log("Initializing Supabase client...");
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // Service role client bypasses RLS — required because this is a server-side
+    // OAuth redirect with no user session cookie available.
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false },
+    });
 
-    // Save Facebook connection to Supabase with proper column names
-    console.log("Attempting to insert/update facebook_connections for user_id:", clientId);
+    console.log("Attempting to upsert facebook_connections for user_id:", authUserId);
     const upsertPayload = {
-      user_id: clientId,
+      user_id: authUserId,
       fb_user_id: userData.id,
       fb_name: fbName,
       fb_email: fbEmail,
       access_token: "***REDACTED***",
-      token_expires_at: tokenExpiresAt,
+      expires_at: tokenExpiresAt,
       ad_account_ids: adAccountIds,
       page_ids: pageIds,
     };
@@ -209,12 +202,12 @@ export async function GET(request: NextRequest) {
       .from("facebook_connections")
       .upsert(
         {
-          user_id: clientId,
+          user_id: authUserId,
           fb_user_id: userData.id,
           fb_name: fbName,
           fb_email: fbEmail,
           access_token: access_token,
-          token_expires_at: tokenExpiresAt,
+          expires_at: tokenExpiresAt,
           ad_account_ids: adAccountIds,
           page_ids: pageIds,
         },
@@ -245,13 +238,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(errorRedirect);
     }
 
-    console.log("✓ Successfully saved Facebook connection for user_id:", clientId);
+    console.log("✓ Successfully saved Facebook connection for user_id:", authUserId);
     console.log("Saved data:", {
-      user_id: clientId,
+      user_id: authUserId,
       fb_user_id: userData.id,
       fb_name: fbName,
       fb_email: fbEmail,
-      token_expires_at: tokenExpiresAt,
+      expires_at: tokenExpiresAt,
       ad_account_ids_count: adAccountIds.length,
       page_ids_count: pageIds.length,
     });

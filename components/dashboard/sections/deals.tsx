@@ -18,7 +18,10 @@ import {
 } from "@/components/ui/select";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { supabase, type Lead } from "@/lib/supabase";
+import { createClientSideClient, type Lead } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth-context";
+
+const supabase = createClientSideClient();
 
 const scoreColors: Record<string, { bg: string; text: string }> = {
   hot: { bg: "bg-red-500/10", text: "text-red-500" },
@@ -115,6 +118,7 @@ interface FilterState {
 }
 
 export function DealsSection() {
+  const { user } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -131,12 +135,14 @@ export function DealsSection() {
 
   // Fetch leads from Supabase
   useEffect(() => {
+    if (!user) return;
     const fetchLeads = async () => {
       try {
         console.log("=== Deals: Fetching leads from Supabase ===");
         const { data, error } = await supabase
           .from("leads")
           .select("*")
+          .eq("user_id", user.id)
           .order("created_at", { ascending: false });
 
         console.log("Deals: Query response:", { dataCount: data?.length || 0, hasError: !!error });
@@ -546,7 +552,7 @@ export function DealsSection() {
                         </span>
                       </td>
                       <td className="py-4 px-4">
-                        <div className={cn("inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border", scoreColors[lead.lead_score.toLowerCase()]?.bg ?? "bg-gray-500/10", scoreColors[lead.lead_score.toLowerCase()]?.text ?? "text-gray-500")}>
+                        <div className={cn("inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border", scoreColors[lead.lead_score]?.bg ?? "bg-gray-500/10", scoreColors[lead.lead_score]?.text ?? "text-gray-500")}>
                           <span className="w-2 h-2 rounded-full bg-current"></span>
                           {lead.lead_score.toUpperCase()}
                         </div>

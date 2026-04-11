@@ -2,8 +2,10 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "./supabase";
 import type { User } from "@supabase/supabase-js";
+import { createClientSideClient } from "./supabase";
+
+const supabase = createClientSideClient();
 
 interface AuthContextType {
   user: User | null;
@@ -21,36 +23,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    // Check if user is already logged in
+    let mounted = true;
+
+    // Set up the auth state listener first so no events are missed while the
+    // initial getUser() round-trip is in flight.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (mounted) {
+        setUser(session?.user ?? null);
+      }
+    });
+
+    // Verify the JWT server-side — getUser() is slower than getSession() but
+    // is the only call that actually validates the token with Supabase.
     const checkAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        setUser(session?.user ?? null);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (mounted) {
+          setUser(user ?? null);
+        }
       } catch (error) {
+        // Network down or unexpected error — clear user so the app doesn't hang.
         console.error("Auth check error:", error);
+        if (mounted) {
+          setUser(null);
+        }
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     };
 
     checkAuth();
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user ?? null);
-    });
-
     return () => {
-      subscription?.unsubscribe();
+      mounted = false;
+      subscription.unsubscribe();
     };
   }, []);
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       router.push("/");
     } catch (error) {
@@ -61,10 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-      });
+      const { error } = await supabase.auth.signUp({ email, password });
       if (error) throw error;
     } catch (error) {
       console.error("Sign up error:", error);
@@ -74,12 +85,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
-      await supabase.auth.signOut();
-      setUser(null);
-      router.push("/login");
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
     } catch (error) {
       console.error("Sign out error:", error);
       throw error;
+    } finally {
+      setUser(null);
+      setLoading(false);
+      router.push("/login");
     }
   };
 

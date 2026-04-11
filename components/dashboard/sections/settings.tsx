@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { createClientSideClient } from "@/lib/supabase";
+
+const supabase = createClientSideClient();
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,27 +39,29 @@ import {
   X,
 } from "lucide-react";
 
+// These integrations are not yet connected — status is false until real DB
+// records back each one. Facebook is handled separately with a live Supabase check.
 const integrations = [
   {
     id: "salesforce",
     name: "Salesforce",
     description: "Sync contacts and opportunities",
-    connected: true,
-    lastSync: "2 hours ago",
+    connected: false,
+    lastSync: null,
   },
   {
     id: "hubspot",
     name: "HubSpot",
     description: "Marketing automation and CRM",
-    connected: true,
-    lastSync: "5 mins ago",
+    connected: false,
+    lastSync: null,
   },
   {
     id: "slack",
     name: "Slack",
     description: "Team notifications and alerts",
-    connected: true,
-    lastSync: "Real-time",
+    connected: false,
+    lastSync: null,
   },
   {
     id: "gmail",
@@ -77,8 +81,8 @@ const integrations = [
     id: "zoom",
     name: "Zoom",
     description: "Video conferencing integration",
-    connected: true,
-    lastSync: "1 hour ago",
+    connected: false,
+    lastSync: null,
   },
 ];
 
@@ -584,16 +588,21 @@ export function SettingsSection() {
                             if (user) {
                               setFbSyncing(true);
                               try {
-                                const response = await fetch("/api/facebook/sync", {
+                                const { data: { session } } = await supabase.auth.getSession();
+                                const response = await fetch("/api/facebook/sync-leads", {
                                   method: "POST",
-                                  headers: { "Content-Type": "application/json" },
+                                  headers: {
+                                    "Content-Type": "application/json",
+                                    "Authorization": `Bearer ${session?.access_token ?? ""}`,
+                                  },
                                   body: JSON.stringify({ userId: user.id }),
                                 });
                                 const data = await response.json();
                                 if (!response.ok) {
-                                  setFbError(data.error || "Failed to sync Facebook data");
+                                  setFbError(data.error || "Failed to sync leads");
                                 } else {
                                   setFbError(null);
+                                  console.log(`[sync] ${data.message}`);
                                 }
                               } catch (error) {
                                 console.error("Sync error:", error);

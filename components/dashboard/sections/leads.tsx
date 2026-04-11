@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { supabase, type Lead } from "@/lib/supabase";
+import { createClientSideClient, type Lead } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth-context";
 import {
   BarChart,
   Bar,
@@ -14,70 +15,51 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
+const supabase = createClientSideClient();
+
 export function LeadsSection() {
+  const { user } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [chartData, setChartData] = useState<
-    Array<{ day: string; leads: number }>
-  >([]);
+  const [chartData, setChartData] = useState<Array<{ day: string; leads: number }>>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!user) return;
+
     const fetchLeads = async () => {
       try {
-        // Get current month's leads
         const now = new Date();
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
         const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
-        console.log("=== Leads Overview: Fetching leads from Supabase ===");
         const { data, error } = await supabase
           .from("leads")
           .select("*")
+          .eq("user_id", user.id)
           .gte("created_at", monthStart.toISOString())
           .lte("created_at", monthEnd.toISOString())
           .order("created_at", { ascending: false });
 
-        console.log("Leads Overview: Query response:", { dataCount: data?.length || 0, hasError: !!error });
-        
         if (error) {
-          console.error("❌ Leads Overview: Supabase error:", {
-            message: error.message,
-            code: error.code,
-            details: error.details,
-            hint: error.hint,
-            status: error.status,
-          });
+          console.error("Leads fetch error:", error);
           throw error;
         }
 
-        console.log("✅ Leads Overview: Successfully fetched", data?.length || 0, "leads");
         setLeads(data || []);
 
-        // Generate chart data (leads per day)
+        // Build leads-per-day chart data
         const daysInMonth = monthEnd.getDate();
         const leadsPerDay: Record<number, number> = {};
-
-        // Initialize all days
-        for (let i = 1; i <= daysInMonth; i++) {
-          leadsPerDay[i] = 0;
-        }
-
-        // Count leads per day
+        for (let i = 1; i <= daysInMonth; i++) leadsPerDay[i] = 0;
         (data || []).forEach((lead) => {
-          const leadDate = new Date(lead.created_at);
-          const day = leadDate.getDate();
+          const day = new Date(lead.created_at).getDate();
           leadsPerDay[day]++;
         });
-
-        // Convert to chart format
-        const chartData = Object.entries(leadsPerDay).map(([day, count]) => ({
-          day: `${day}`,
-          leads: count,
-        }));
-
-        setChartData(chartData);
-      } catch (error) {
-        console.error("Error fetching leads:", error);
+        setChartData(
+          Object.entries(leadsPerDay).map(([day, count]) => ({ day, leads: count }))
+        );
+      } catch (err) {
+        console.error("Error fetching leads:", err);
       } finally {
         setLoading(false);
       }
@@ -85,26 +67,13 @@ export function LeadsSection() {
 
     fetchLeads();
 
-    // Subscribe to real-time updates
     const channel = supabase
       .channel("leads")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "leads",
-        },
-        () => {
-          fetchLeads();
-        }
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, fetchLeads)
       .subscribe();
 
-    return () => {
-      channel.unsubscribe();
-    };
-  }, []);
+    return () => { channel.unsubscribe(); };
+  }, [user]);
 
   const totalLeads = leads.length;
   const hotLeads = leads.filter((l) => l.lead_score === "hot").length;
@@ -121,42 +90,32 @@ export function LeadsSection() {
       <div className="space-y-4">
         <Card className="border-border bg-card">
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg">This Month's Leads</CardTitle>
+            <CardTitle className="text-lg">This Month&apos;s Leads</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3 bg-secondary rounded-lg">
                 <p className="text-xs text-muted-foreground mb-1">Total</p>
-                <p className="text-2xl font-semibold text-foreground">
-                  {totalLeads}
-                </p>
+                <p className="text-2xl font-semibold text-foreground">{totalLeads}</p>
               </div>
               <div className="p-3 bg-secondary rounded-lg">
                 <p className="text-xs text-muted-foreground mb-1">Avg Score</p>
-                <p className="text-2xl font-semibold text-foreground">
-                  {avgScore}
-                </p>
+                <p className="text-2xl font-semibold text-foreground">{avgScore}</p>
               </div>
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between p-2 bg-red-500/10 rounded-lg border border-red-500/20">
                 <span className="text-sm text-foreground">Hot</span>
-                <Badge className="bg-red-500/20 text-red-400 border-red-500/30">
-                  {hotLeads}
-                </Badge>
+                <Badge className="bg-red-500/20 text-red-400 border-red-500/30">{hotLeads}</Badge>
               </div>
               <div className="flex items-center justify-between p-2 bg-amber-500/10 rounded-lg border border-amber-500/20">
                 <span className="text-sm text-foreground">Warm</span>
-                <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">
-                  {warmLeads}
-                </Badge>
+                <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">{warmLeads}</Badge>
               </div>
               <div className="flex items-center justify-between p-2 bg-blue-500/10 rounded-lg border border-blue-500/20">
                 <span className="text-sm text-foreground">Cold</span>
-                <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
-                  {coldLeads}
-                </Badge>
+                <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">{coldLeads}</Badge>
               </div>
             </div>
           </CardContent>

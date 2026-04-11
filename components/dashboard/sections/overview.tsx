@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
+import { createClientSideClient } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth-context";
 import { MetricCard } from "@/components/dashboard/metric-card";
+
+const supabase = createClientSideClient();
 import {
   BarChart,
   Bar,
@@ -28,10 +31,12 @@ interface OverviewData {
 }
 
 export function OverviewSection() {
+  const { user } = useAuth();
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!user) return;
     const fetchData = async () => {
       try {
         const now = new Date();
@@ -44,6 +49,7 @@ export function OverviewSection() {
         const { data: leadsData } = await supabase
           .from("leads")
           .select("id, lead_score, lead_score_value, created_at")
+          .eq("user_id", user.id)
           .gte("created_at", monthStart.toISOString())
           .lte("created_at", monthEnd.toISOString());
 
@@ -52,7 +58,7 @@ export function OverviewSection() {
         // KPIs
         const totalLeads = leads.length;
         const hotLeads = leads.filter(
-          (l) => l.lead_score?.toLowerCase() === "hot"
+          (l) => l.lead_score === "hot"
         ).length;
         const leadsToday = leads.filter((l) => {
           const t = new Date(l.created_at).getTime();
@@ -79,19 +85,13 @@ export function OverviewSection() {
         );
 
         // Score breakdown
-        const hotCount = leads.filter(
-          (l) => l.lead_score?.toLowerCase() === "hot"
-        ).length;
-        const warmCount = leads.filter(
-          (l) => l.lead_score?.toLowerCase() === "warm"
-        ).length;
-        const coldCount = leads.filter(
-          (l) => l.lead_score?.toLowerCase() === "cold"
-        ).length;
+        const hotCount = leads.filter((l) => l.lead_score === "hot").length;
+        const warmCount = leads.filter((l) => l.lead_score === "warm").length;
+        const coldCount = leads.filter((l) => l.lead_score === "cold").length;
         const scoreBreakdown = [
-          { name: "Hot", value: hotCount, color: "#ef4444" },
-          { name: "Warm", value: warmCount, color: "#f59e0b" },
-          { name: "Cold", value: coldCount, color: "#3b82f6" },
+          { name: "hot", value: hotCount, color: "#ef4444" },
+          { name: "warm", value: warmCount, color: "#f59e0b" },
+          { name: "cold", value: coldCount, color: "#3b82f6" },
         ].filter((s) => s.value > 0);
 
         setData({
@@ -110,7 +110,7 @@ export function OverviewSection() {
     };
 
     fetchData();
-  }, []);
+  }, [user]);
 
   if (loading) {
     return (
