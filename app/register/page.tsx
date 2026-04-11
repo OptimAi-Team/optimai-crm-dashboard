@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { createClientSideClient } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
@@ -45,9 +46,21 @@ export default function RegisterPage() {
     if (isExistingUser) {
       setLoading(true);
       try {
-        await signIn(email, password);
-        // Auth context redirects on success via the useEffect above
+        console.log("AUTH_ATTEMPT: signing in with email", email);
+        const supabase = createClientSideClient();
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+        if (error) {
+          console.error("AUTH_ERROR:", error);
+          setError(error.message || "Invalid password. Please try again.");
+          return;
+        }
+
+        console.log("AUTH_STATUS:", data);
+        console.log("REDIRECTING_TO: /");
+        router.push("/");
       } catch (err) {
+        console.error("AUTH_ERROR (unexpected):", err);
         setError(err instanceof Error ? err.message : "Invalid password. Please try again.");
       } finally {
         setLoading(false);
