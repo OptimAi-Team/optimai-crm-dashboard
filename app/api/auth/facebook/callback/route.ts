@@ -267,9 +267,10 @@ export async function GET(request: NextRequest) {
     // the OAuth connection is already saved; we just log the error.
     try {
       const n8nPayload = {
-        client_id: dealershipSlug ?? authUserId, // slug preferred; UUID fallback
+        client_id: dealershipSlug ?? authUserId, // email preferred; UUID fallback
         access_token: access_token,
-        ad_account_id: adAccountIds[0] ?? null,
+        ad_account_ids: adAccountIds,
+        page_ids: pageIds,
       };
       console.log("Sending client-discovery update to n8n (slug:", n8nPayload.client_id, ")");
       const n8nRes = await fetch(
