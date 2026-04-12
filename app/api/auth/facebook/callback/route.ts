@@ -130,9 +130,10 @@ export async function GET(request: NextRequest) {
       `https://graph.facebook.com/v18.0/me/adaccounts?fields=id,name&access_token=${access_token}`
     );
     const adAccountsData = await adAccountsResponse.json();
-    const adAccountIds = adAccountsData.data?.map((acc: any) => acc.id) || [];
-    console.log("Fetched ad accounts count:", adAccountIds.length);
-    console.log("Ad account IDs:", adAccountIds);
+    const adAccounts = adAccountsData.data?.map((acc: any) => ({ id: acc.id, name: acc.name })) || [];
+    const adAccountIds = adAccounts.map((acc: { id: string; name: string }) => acc.id); // flat IDs for Supabase text[]
+    console.log("Fetched ad accounts count:", adAccounts.length);
+    console.log("Ad accounts:", adAccounts);
 
     console.log("Fetching Facebook pages for user:", userData.id);
     const pagesResponse = await fetch(
@@ -146,9 +147,10 @@ export async function GET(request: NextRequest) {
       console.warn("Pages fetch response:", { status: pagesResponse.status, error: pagesData.error });
     }
     
-    const pageIds = pagesData.data?.map((page: any) => page.id) || [];
-    console.log("Fetched pages count:", pageIds.length);
-    console.log("Page IDs:", pageIds);
+    const pages = pagesData.data?.map((page: any) => ({ id: page.id, name: page.name })) || [];
+    const pageIds = pages.map((page: { id: string; name: string }) => page.id); // flat IDs for Supabase text[]
+    console.log("Fetched pages count:", pages.length);
+    console.log("Pages:", pages);
 
     // Calculate token expiration
     const tokenExpiresIn = tokenData.expires_in || 5184000; // Default 60 days if not provided
@@ -269,8 +271,8 @@ export async function GET(request: NextRequest) {
       const n8nPayload = {
         client_id: dealershipSlug ?? authUserId, // email preferred; UUID fallback
         access_token: access_token,
-        ad_account_ids: adAccountIds,
-        page_ids: pageIds,
+        ad_accounts: adAccounts,
+        pages: pages,
       };
       console.log("Sending client-discovery update to n8n (slug:", n8nPayload.client_id, ")");
       const n8nRes = await fetch(
