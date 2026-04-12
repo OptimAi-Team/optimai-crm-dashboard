@@ -125,6 +125,12 @@ export default function RegisterPage() {
           whatsapp: false,
         }),
       });
+
+      // Persist the dealership slug to auth user metadata so the Facebook
+      // OAuth callback can read it server-side without a separate DB table.
+      const supabase = createClientSideClient();
+      await supabase.auth.updateUser({ data: { client_id: clientId } });
+
       setStep(3);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit dealership info");

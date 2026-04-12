@@ -249,31 +249,44 @@ export async function GET(request: NextRequest) {
       page_ids_count: pageIds.length,
     });
 
-    // ── Notify n8n of the new Facebook auth handshake ─────────────────────
+    // ── Resolve dealership slug (client_id) from auth user metadata ───────
+    // The slug was saved to user_metadata during Step 2 of registration.
+    // We use it here so n8n can match this Facebook token to the correct
+    // client-discovery row — the UUID (authUserId) is NOT the slug n8n knows.
+    let dealershipSlug: string | null = null;
+    try {
+      const { data: { user: authUser } } = await supabase.auth.admin.getUserById(authUserId);
+      dealershipSlug = authUser?.user_metadata?.client_id ?? null;
+      console.log("Resolved dealership slug:", dealershipSlug ?? "(not set — metadata missing)");
+    } catch (metaErr) {
+      console.error("Failed to read user metadata for slug:", metaErr);
+    }
+
+    // ── Notify n8n via client-discovery so it can update the matching row ─
     // Fires after Supabase write succeeds. A failure here is non-fatal —
     // the OAuth connection is already saved; we just log the error.
     try {
-      const handshakePayload = {
-        client_id: authUserId,
+      const n8nPayload = {
+        client_id: dealershipSlug ?? authUserId, // slug preferred; UUID fallback
         access_token: access_token,
         ad_account_id: adAccountIds[0] ?? null,
       };
-      console.log("Sending Facebook auth handshake to n8n...");
-      const handshakeRes = await fetch(
-        "https://primary-gaxt-production.up.railway.app/webhook-test/facebook-auth-handshake",
+      console.log("Sending client-discovery update to n8n (slug:", n8nPayload.client_id, ")");
+      const n8nRes = await fetch(
+        "https://primary-gaxt-production.up.railway.app/webhook-test/client-discovery",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(handshakePayload),
+          body: JSON.stringify(n8nPayload),
         }
       );
-      if (!handshakeRes.ok) {
-        console.error("n8n handshake non-OK response:", handshakeRes.status, await handshakeRes.text());
+      if (!n8nRes.ok) {
+        console.error("n8n client-discovery non-OK response:", n8nRes.status, await n8nRes.text());
       } else {
-        console.log("✓ n8n handshake delivered successfully");
+        console.log("✓ n8n client-discovery delivered successfully");
       }
-    } catch (handshakeErr) {
-      console.error("n8n handshake fetch failed (non-fatal):", handshakeErr);
+    } catch (n8nErr) {
+      console.error("n8n client-discovery fetch failed (non-fatal):", n8nErr);
     }
 
     const successUrl = `${redirectUri}/?section=settings&fb=connected`;
