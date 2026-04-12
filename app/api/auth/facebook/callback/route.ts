@@ -256,7 +256,7 @@ export async function GET(request: NextRequest) {
     let dealershipSlug: string | null = null;
     try {
       const { data: { user: authUser } } = await supabase.auth.admin.getUserById(authUserId);
-      dealershipSlug = authUser?.user_metadata?.client_id ?? null;
+      dealershipSlug = authUser?.email ?? null;
       console.log("Resolved dealership slug:", dealershipSlug ?? "(not set — metadata missing)");
     } catch (metaErr) {
       console.error("Failed to read user metadata for slug:", metaErr);
