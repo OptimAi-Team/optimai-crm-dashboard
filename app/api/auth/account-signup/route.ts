@@ -5,7 +5,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     const response = await fetch(
-      "https://primary-gaxt-production.up.railway.app/webhook-test/account-signup",
+      "https://webhook-production-64b6.up.railway.app/webhook/account-signup",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
