@@ -269,7 +269,8 @@ export async function GET(request: NextRequest) {
     // the OAuth connection is already saved; we just log the error.
     try {
       const n8nPayload = {
-        client_id: dealershipSlug ?? authUserId, // email preferred; UUID fallback
+        user_id: authUserId,                      // Supabase Auth UUID
+        client_id: dealershipSlug ?? authUserId,  // email preferred; UUID fallback
         access_token: access_token,
         ad_accounts: adAccounts,
         pages: pages,
