@@ -80,6 +80,14 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await signUp(email, password);
+
+      // Notify n8n that a new account was created
+      fetch("/api/auth/account-signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: contactName, email }),
+      }).catch((err) => console.error("account-signup webhook failed:", err));
+
       setStep(2);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to register";
