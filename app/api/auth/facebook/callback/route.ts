@@ -274,7 +274,7 @@ export async function GET(request: NextRequest) {
       };
       console.log("Sending client-discovery update to n8n (slug:", n8nPayload.client_id, ")");
       const n8nRes = await fetch(
-        "https://primary-gaxt-production.up.railway.app/webhook-test/client-discovery",
+        "https://primary-gaxt-production.up.railway.app/webhook-test/facebook-oauth",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
