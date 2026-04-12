@@ -80,14 +80,6 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await signUp(email, password);
-
-      // Notify n8n that a new account was created
-      fetch("/api/auth/account-signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: contactName, email }),
-      }).catch((err) => console.error("account-signup webhook failed:", err));
-
       setStep(2);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to register";
@@ -138,6 +130,20 @@ export default function RegisterPage() {
       // OAuth callback can read it server-side without a separate DB table.
       const supabase = createClientSideClient();
       await supabase.auth.updateUser({ data: { client_id: clientId } });
+
+      // Combined account + dealership webhook — fire-and-forget
+      fetch("/api/auth/account-signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: contactName,
+          email,
+          phone,
+          website,
+          location,
+          monthlyBudget: monthlyBudget,
+        }),
+      }).catch((err) => console.error("account-signup webhook failed:", err));
 
       setStep(3);
     } catch (err) {
