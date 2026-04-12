@@ -138,10 +138,11 @@ export default function RegisterPage() {
         body: JSON.stringify({
           name: contactName,
           email,
+          dealershipName,
           phone,
           website,
           location,
-          monthlyBudget: monthlyBudget,
+          monthlyBudget,
         }),
       }).catch((err) => console.error("account-signup webhook failed:", err));
 
