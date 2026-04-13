@@ -1,8 +1,6 @@
 "use client";
 
 import React from "react";
-import LucideCircleDollarSignIcon from "lucide-react"; // Import the missing icon component
-
 import { cn } from "@/lib/utils";
 import type { Section } from "@/app/page";
 import {
@@ -21,6 +19,7 @@ import {
   Vault,
   Network,
   MessageCircle,
+  Wallet,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -38,6 +37,7 @@ const navItems: { id: Section; label: string; icon: React.ElementType }[] = [
   { id: "team", label: "Team", icon: Users },
   { id: "forecasting", label: "Forecasting", icon: TrendingUp },
   { id: "reports", label: "Reports", icon: BarChart3 },
+  { id: "finances", label: "Finances", icon: Wallet },
   { id: "brain-dump", label: "Brain Dump", icon: Brain },
   { id: "vault", label: "Vault", icon: Vault },
   { id: "mind-graph", label: "Mind Graph", icon: Network },

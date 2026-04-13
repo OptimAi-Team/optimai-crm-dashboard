@@ -29,6 +29,7 @@ const sectionTitles: Record<Section, string> = {
   "mind-graph": "Mind Graph",
   "ask-brain": "Ask the Brain",
   settings: "Settings",
+  finances: "Finances",
 };
 
 function getInitials(email: string): string {

@@ -17,8 +17,9 @@ import { VaultSection } from "@/components/dashboard/sections/vault";
 import { MindGraphSection } from "@/components/dashboard/sections/mind-graph";
 import { AskBrainSection } from "@/components/dashboard/sections/ask-brain";
 import { SettingsSection } from "@/components/dashboard/sections/settings";
+import { FinancesSection } from "@/components/dashboard/sections/finances";
 
-export type Section = "overview" | "pipeline" | "deals" | "customers" | "team" | "forecasting" | "reports" | "brain-dump" | "vault" | "mind-graph" | "ask-brain" | "settings";
+export type Section = "overview" | "pipeline" | "deals" | "customers" | "team" | "forecasting" | "reports" | "brain-dump" | "vault" | "mind-graph" | "ask-brain" | "settings" | "finances";
 
 export default function Dashboard() {
   return (
@@ -56,7 +57,7 @@ function DashboardContent() {
   // Check for section query parameter and set active section
   useEffect(() => {
     const section = searchParams.get("section");
-    if (section && ["overview", "pipeline", "deals", "customers", "team", "forecasting", "reports", "brain-dump", "vault", "mind-graph", "ask-brain", "settings"].includes(section)) {
+    if (section && ["overview", "pipeline", "deals", "customers", "team", "forecasting", "reports", "brain-dump", "vault", "mind-graph", "ask-brain", "settings", "finances"].includes(section)) {
       setActiveSection(section as Section);
     }
   }, [searchParams]);
@@ -102,6 +103,8 @@ function DashboardContent() {
         return <AskBrainSection />;
       case "settings":
         return <SettingsSection />;
+      case "finances":
+        return <FinancesSection />;
       default:
         return <OverviewSection />;
     }
