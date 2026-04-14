@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import {
   useFinancialData,
+  last30DaysRange,
   thisMonthRange,
   lastNMonthsRange,
   ytdRange,
@@ -33,7 +34,7 @@ import { cn } from "@/lib/utils";
 
 // ─── Date filter presets ──────────────────────────────────────────────────────
 
-type FilterKey = "this-month" | "last-3m" | "ytd" | "custom";
+type FilterKey = "last-30d" | "this-month" | "last-3m" | "ytd" | "custom";
 
 interface FilterPreset {
   key: FilterKey;
@@ -42,9 +43,10 @@ interface FilterPreset {
 }
 
 const PRESETS: FilterPreset[] = [
-  { key: "this-month", label: "This Month",  range: thisMonthRange },
-  { key: "last-3m",    label: "Last 3M",     range: () => lastNMonthsRange(3) },
-  { key: "ytd",        label: "YTD",         range: ytdRange },
+  { key: "last-30d",   label: "Last 30D",   range: last30DaysRange },
+  { key: "this-month", label: "This Month", range: thisMonthRange },
+  { key: "last-3m",    label: "Last 3M",    range: () => lastNMonthsRange(3) },
+  { key: "ytd",        label: "YTD",        range: ytdRange },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -57,7 +59,13 @@ function fmt(value: number): string {
 }
 
 function toInputDate(d: Date): string {
-  return d.toISOString().split("T")[0];
+  // Use local year/month/day — toISOString() shifts to UTC and returns
+  // tomorrow's date for users east of UTC (e.g. UTC+9 at 11pm local).
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 // ─── Skeleton cards ───────────────────────────────────────────────────────────
@@ -105,8 +113,8 @@ export default function FinancesDashboardPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  const [activeFilter, setActiveFilter] = useState<FilterKey>("this-month");
-  const [dateRange,    setDateRange]     = useState<DateRange>(thisMonthRange());
+  const [activeFilter, setActiveFilter] = useState<FilterKey>("last-30d");
+  const [dateRange,    setDateRange]     = useState<DateRange>(last30DaysRange());
   const [customFrom,   setCustomFrom]    = useState<string>("");
   const [customTo,     setCustomTo]      = useState<string>("");
   const [showCustom,   setShowCustom]    = useState(false);
@@ -138,8 +146,11 @@ export default function FinancesDashboardPage() {
   const applyCustomRange = useCallback(() => {
     if (!customFrom || !customTo) return;
     setDateRange({
-      from: new Date(customFrom),
-      to:   new Date(customTo + "T23:59:59"),
+      // Bug 3: append local-time suffix so JS parses in local time, not UTC.
+      // "2026-04-01" alone parses as UTC midnight → March 31 at 4pm in PT.
+      // "2026-04-01T00:00:00" parses as local midnight → April 1 at 12am PT.
+      from: new Date(customFrom + "T00:00:00"),
+      to:   new Date(customTo   + "T23:59:59"),
     });
     setActiveFilter("custom");
     setShowCustom(false);
@@ -397,22 +408,12 @@ export default function FinancesDashboardPage() {
 
         {/* ── Transactions ──────────────────────────────────────────────────── */}
         <section aria-label="Transaction history">
+          {/* Cleanup 2: removed .slice(0,50) and dead "View all" no-op button.
+              TransactionTable has its own 15-row pagination — the slice was redundant. */}
           {loading ? (
             <TableSkeleton />
           ) : (
-            <div className="space-y-3">
-              <TransactionTable transactions={transactions.slice(0, 50)} />
-              {transactions.length > 50 && (
-                <div className="text-center">
-                  <button
-                    onClick={() => {}}
-                    className="text-sm text-accent hover:text-accent/80 underline underline-offset-4 transition-colors"
-                  >
-                    View all {transactions.length} transactions
-                  </button>
-                </div>
-              )}
-            </div>
+            <TransactionTable transactions={transactions} />
           )}
         </section>
       </main>

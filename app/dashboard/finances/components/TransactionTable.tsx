@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,27 @@ interface TransactionTableProps {
 
 const PAGE_SIZE = 15;
 
+const TYPE_LABELS: Record<string, string> = {
+  INCOME: "Income",
+  EXPENSE: "Expense",
+  EQUITY: "Equity",
+  "OWNER DRAWING": "Drawing",
+};
+
+const TYPE_STYLES: Record<string, string> = {
+  INCOME: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  EXPENSE: "bg-red-500/10 text-red-400 border-red-500/20",
+  EQUITY: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  "OWNER DRAWING": "bg-purple-500/10 text-purple-400 border-purple-500/20",
+};
+
+const AMOUNT_STYLES: Record<string, string> = {
+  INCOME: "text-emerald-400",
+  EXPENSE: "text-red-400",
+  EQUITY: "text-blue-400",
+  "OWNER DRAWING": "text-purple-400",
+};
+
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -45,9 +66,14 @@ function formatDate(dateStr: string): string {
 
 export function TransactionTable({ transactions }: TransactionTableProps) {
   const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<"all" | "INCOME" | "EXPENSE">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "INCOME" | "EXPENSE" | "EQUITY" | "OWNER DRAWING">("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [page, setPage] = useState(1);
+
+  // Bug 1: Reset to page 1 whenever the transaction set changes (date range switch).
+  // Without this, switching from a range with 40 results to one with 8 while on
+  // page 3 leaves the paginated slice empty — blank table with no error shown.
+  useEffect(() => { setPage(1); }, [transactions]);
 
   const categories = useMemo(() => {
     const cats = new Set(transactions.map((t) => t.category));
@@ -60,7 +86,7 @@ export function TransactionTable({ transactions }: TransactionTableProps) {
       const matchSearch =
         !q ||
         t.description.toLowerCase().includes(q) ||
-        (t.client_name?.toLowerCase().includes(q) ?? false) ||
+        (t.payee?.toLowerCase().includes(q) ?? false) ||
         t.category.toLowerCase().includes(q);
       const matchType = typeFilter === "all" || t.type === typeFilter;
       const matchCat = categoryFilter === "all" || t.category === categoryFilter;
@@ -99,17 +125,19 @@ export function TransactionTable({ transactions }: TransactionTableProps) {
         </div>
         <Select
           value={typeFilter}
-          onValueChange={resetPage<"all" | "INCOME" | "EXPENSE">(
-            (v) => setTypeFilter(v as "all" | "INCOME" | "EXPENSE")
+          onValueChange={resetPage<"all" | "INCOME" | "EXPENSE" | "EQUITY" | "OWNER DRAWING">(
+            (v) => setTypeFilter(v as "all" | "INCOME" | "EXPENSE" | "EQUITY" | "OWNER DRAWING")
           )}
         >
-          <SelectTrigger className="h-9 w-full sm:w-[130px] bg-secondary border-border text-sm">
+          <SelectTrigger className="h-9 w-full sm:w-[140px] bg-secondary border-border text-sm">
             <SelectValue placeholder="Type" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Types</SelectItem>
             <SelectItem value="INCOME">Income</SelectItem>
             <SelectItem value="EXPENSE">Expense</SelectItem>
+            <SelectItem value="EQUITY">Equity</SelectItem>
+            <SelectItem value="OWNER DRAWING">Drawing</SelectItem>
           </SelectContent>
         </Select>
         <Select value={categoryFilter} onValueChange={resetPage(setCategoryFilter)}>
@@ -178,33 +206,31 @@ export function TransactionTable({ transactions }: TransactionTableProps) {
                     {tx.category}
                   </td>
                   <td className="py-3 pr-4 hidden md:table-cell text-muted-foreground text-xs">
-                    {tx.client_name || "—"}
+                    {tx.payee || "—"}
                   </td>
                   <td className="py-3 pr-4">
                     <Badge
                       variant="secondary"
                       className={cn(
                         "flex items-center gap-1 w-fit text-xs px-2 py-0.5 border",
-                        tx.type === "INCOME"
-                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                          : "bg-red-500/10 text-red-400 border-red-500/20"
+                        TYPE_STYLES[tx.type] ?? "bg-secondary text-muted-foreground border-border"
                       )}
                     >
-                      {tx.type === "INCOME" ? (
-                        <ArrowDownLeft className="w-3 h-3" />
-                      ) : (
+                      {tx.type === "INCOME" || tx.type === "EQUITY" ? (
                         <ArrowUpRight className="w-3 h-3" />
+                      ) : (
+                        <ArrowDownLeft className="w-3 h-3" />
                       )}
-                      {tx.type}
+                      {TYPE_LABELS[tx.type] ?? tx.type}
                     </Badge>
                   </td>
                   <td
                     className={cn(
                       "py-3 text-right font-semibold whitespace-nowrap",
-                      tx.type === "INCOME" ? "text-emerald-400" : "text-red-400"
+                      AMOUNT_STYLES[tx.type] ?? "text-foreground"
                     )}
                   >
-                    {tx.type === "INCOME" ? "+" : "−"}
+                    {tx.type === "INCOME" || tx.type === "EQUITY" ? "+" : "−"}
                     {formatCurrency(tx.amount)}
                   </td>
                 </tr>
