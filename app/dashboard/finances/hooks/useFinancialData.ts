@@ -16,7 +16,7 @@ import { useAuth } from "@/lib/auth-context";
 //                      WHERE table_name = 'optimai_transactions';
 // ─────────────────────────────────────────────────────────────────────────────
 
-const LIVE_MODE         = true;
+const LIVE_MODE         = false;
 const TABLE_HAS_USER_ID = true;
 
 const supabase = createClientSideClient();
