@@ -169,17 +169,25 @@ function filterByRange<T extends { transaction_date: string }>(
 ): T[] {
   const from = toLocalDateStr(range.from);
   const to   = toLocalDateStr(range.to);
-  return rows.filter((r) => r.transaction_date >= from && r.transaction_date <= to);
+  // Slice to 10 chars: Supabase may return "2026-04-16T00:00:00" for date columns.
+  // "2026-04-16T..." > "2026-04-16" in string order, so the upper-bound check
+  // would silently drop any transaction whose date equals the range end.
+  return rows.filter((r) => {
+    const d = r.transaction_date.slice(0, 10);
+    return d >= from && d <= to;
+  });
 }
 
 /** Revenue = INCOME transactions only (P&L view). */
 function sumIncome(txs: Array<{ type: string; amount: number }>): number {
-  return txs.filter((t) => t.type === "INCOME").reduce((a, t) => a + t.amount, 0);
+  // Number() guards against Supabase returning numeric(12,2) as a string.
+  // "1500.00" + "750.00" = "01500.00750.00" without the coercion.
+  return txs.filter((t) => t.type === "INCOME").reduce((a, t) => a + Number(t.amount), 0);
 }
 
 /** Operating expenses = EXPENSE transactions only (P&L view). */
 function sumExpenses(txs: Array<{ type: string; amount: number }>): number {
-  return txs.filter((t) => t.type === "EXPENSE").reduce((a, t) => a + t.amount, 0);
+  return txs.filter((t) => t.type === "EXPENSE").reduce((a, t) => a + Number(t.amount), 0);
 }
 
 /**
@@ -190,8 +198,9 @@ function sumExpenses(txs: Array<{ type: string; amount: number }>): number {
  */
 function runningCashBalance(txs: Array<{ type: string; amount: number }>): number {
   return txs.reduce((bal, t) => {
-    if (t.type === "INCOME"  || t.type === "EQUITY")        return bal + t.amount;
-    if (t.type === "EXPENSE" || t.type === "OWNER DRAWING") return bal - t.amount;
+    const amt = Number(t.amount);
+    if (t.type === "INCOME"  || t.type === "EQUITY")        return bal + amt;
+    if (t.type === "EXPENSE" || t.type === "OWNER DRAWING") return bal - amt;
     return bal;
   }, 0);
 }
@@ -374,8 +383,14 @@ function deriveFinancialData(
   activeRange: DateRange,
 ): Omit<FinancialData, "loading" | "error" | "refetch"> {
 
+  const fromStr = toLocalDateStr(activeRange.from);
+  const toStr   = toLocalDateStr(activeRange.to);
+  console.log("[useFinancialData] activeRange:", fromStr, "→", toStr,
+    "| allTx:", allTx.length);
+
   // Period slice — all transactions that fall within the selected date range
   const periodTx = filterByRange(allTx, activeRange);
+  console.log("[useFinancialData] periodTx after filter:", periodTx.length);
 
   // Prior period — same duration, shifted one period back
   const prior    = priorPeriod(activeRange);
@@ -541,7 +556,12 @@ export function useFinancialData(dateRange?: DateRange): FinancialData {
         throw new Error(`Query failed: ${qErr.message} (code: ${qErr.code})`);
       }
 
-      setAllTx((data as Transaction[]) ?? []);
+      const rows = (data as Transaction[]) ?? [];
+      console.log("[useFinancialData] raw rows:", rows.length,
+        "| first 3 dates:", rows.slice(0, 3).map(r => r.transaction_date),
+        "| first amount type:", typeof rows[0]?.amount, "=", rows[0]?.amount
+      );
+      setAllTx(rows);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to load financial data.";
       setError(message);
