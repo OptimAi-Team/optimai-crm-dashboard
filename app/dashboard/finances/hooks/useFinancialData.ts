@@ -168,8 +168,14 @@ function filterByRange<T extends { transaction_date: string }>(
   range: DateRange,
 ): T[] {
   const from = toLocalDateStr(range.from);
-  const to   = toLocalDateStr(range.to);
-  return rows.filter((r) => r.transaction_date >= from && r.transaction_date <= to);
+  // Advance range.to by 1 day and use strict-less-than so today's transactions
+  // always pass. "2026-04-17" < "2026-04-18" is unambiguous regardless of
+  // timezone, whereas "<= today" can fail when local midnight doesn't align
+  // with how getDate() resolves.
+  const toNext = new Date(range.to);
+  toNext.setDate(toNext.getDate() + 1);
+  const to = toLocalDateStr(toNext);
+  return rows.filter((r) => r.transaction_date >= from && r.transaction_date < to);
 }
 
 /** Revenue = INCOME transactions only (P&L view). */
@@ -463,16 +469,16 @@ function deriveFinancialData(
   // ── Insights ─────────────────────────────────────────────────────────────
   const insights = buildInsights(metrics, cashFlow, expensesByCategory, incomeByClient);
 
-  // NOTE: transactions bypasses the period filter and shows ALL rows so we can
-  // confirm data reaches the component. Re-add filterByRange once confirmed.
+  // Transactions table: ALL rows from Supabase, newest first.
+  // No date filter — the table has its own search/type/category UI filters.
   const tableRows = [...allTx].sort(
     (a, b) => b.transaction_date.localeCompare(a.transaction_date)
   );
 
   console.log(
-    "[useFinancialData] → TransactionTable will receive:", tableRows.length, "rows",
-    "\n  periodTx (filtered):", periodTx.length,
-    "\n  sample dates:", tableRows.slice(0, 3).map(r => r.transaction_date),
+    "[useFinancialData] allTx:", allTx.length,
+    "| periodTx (for KPIs/charts):", periodTx.length,
+    "| tableRows (to TransactionTable):", tableRows.length,
   );
 
   return {
@@ -480,7 +486,7 @@ function deriveFinancialData(
     cashFlow,
     expensesByCategory,
     incomeByClient,
-    transactions: tableRows,
+    transactions: tableRows,  // allTx — no period filter
     insights,
   };
 }
