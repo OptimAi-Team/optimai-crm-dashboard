@@ -16,7 +16,8 @@ import { CashFlowChart }     from "./components/CashFlowChart";
 import { ExpenseByCategory } from "./components/ExpenseByCategory";
 import { IncomeByClient }    from "./components/IncomeByClient";
 import { AIInsights }        from "./components/AIInsights";
-import { TransactionTable }  from "./components/TransactionTable";
+import { TransactionTable }      from "./components/TransactionTable";
+import { AddTransactionModal }   from "./components/AddTransactionModal";
 import { Skeleton }          from "@/components/ui/skeleton";
 import { Button }            from "@/components/ui/button";
 import { Input }             from "@/components/ui/input";
@@ -29,6 +30,7 @@ import {
   RefreshCw,
   ArrowLeft,
   Calendar,
+  Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -113,6 +115,7 @@ export default function FinancesDashboardPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
+  const [showAddModal, setShowAddModal] = useState(false);
   const [activeFilter, setActiveFilter] = useState<FilterKey>("last-30d");
   const [dateRange,    setDateRange]     = useState<DateRange>(last30DaysRange());
   const [customFrom,   setCustomFrom]    = useState<string>("");
@@ -214,6 +217,16 @@ export default function FinancesDashboardPage() {
                 Custom
               </button>
             </div>
+
+            {/* Add Transaction */}
+            <Button
+              size="sm"
+              onClick={() => setShowAddModal(true)}
+              className="h-9 gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Add Transaction</span>
+            </Button>
 
             {/* Refresh */}
             <Button
@@ -417,6 +430,12 @@ export default function FinancesDashboardPage() {
           )}
         </section>
       </main>
+
+      <AddTransactionModal
+        open={showAddModal}
+        onOpenChange={setShowAddModal}
+        onSuccess={refetch}
+      />
     </div>
   );
 }

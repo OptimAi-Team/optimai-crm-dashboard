@@ -92,3 +92,71 @@ export async function GET(request: NextRequest) {
     }
   );
 }
+
+export async function POST(request: NextRequest) {
+  // ── Auth ────────────────────────────────────────────────────────────────────
+  const token = getToken(request);
+  if (!token) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const authClient = createClient(SUPABASE_URL, SUPABASE_ANON, {
+    auth: { persistSession: false },
+  });
+  const { data: { user }, error: authError } = await authClient.auth.getUser(token);
+  if (authError || !user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // ── Parse body ───────────────────────────────────────────────────────────────
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  // ── Validate required fields ─────────────────────────────────────────────────
+  const { transaction_date, description, amount, type, category, payee, is_deductible, notes } = body;
+
+  if (!transaction_date || typeof transaction_date !== "string") {
+    return NextResponse.json({ error: "transaction_date is required (YYYY-MM-DD)" }, { status: 400 });
+  }
+  if (!description || typeof description !== "string") {
+    return NextResponse.json({ error: "description is required" }, { status: 400 });
+  }
+  if (amount === undefined || typeof amount !== "number" || amount <= 0) {
+    return NextResponse.json({ error: "amount must be a positive number" }, { status: 400 });
+  }
+  const validTypes = ["INCOME", "EXPENSE", "EQUITY", "OWNER DRAWING"];
+  if (!type || !validTypes.includes(type as string)) {
+    return NextResponse.json({ error: `type must be one of: ${validTypes.join(", ")}` }, { status: 400 });
+  }
+  if (!category || typeof category !== "string") {
+    return NextResponse.json({ error: "category is required" }, { status: 400 });
+  }
+
+  // ── Insert ───────────────────────────────────────────────────────────────────
+  const supabase = authedClient(token);
+  const { data, error } = await supabase
+    .from("optimai_transactions")
+    .insert({
+      user_id:          user.id,
+      transaction_date,
+      description:      description.trim(),
+      amount,
+      type,
+      category,
+      payee:            payee ?? null,
+      is_deductible:    is_deductible ?? false,
+      notes:            notes ?? null,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+
+  return NextResponse.json({ data }, { status: 201 });
+}
