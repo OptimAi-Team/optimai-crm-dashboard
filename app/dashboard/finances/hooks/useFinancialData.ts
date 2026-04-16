@@ -53,16 +53,6 @@ export interface Transaction {
   created_at: string;
 }
 
-/**
- * Lightweight row returned by the context query (Q2).
- * Only the three fields needed for cash balance and cash-flow chart
- * so the payload stays small regardless of table size.
- */
-interface ContextRow {
-  type: "INCOME" | "EXPENSE" | "EQUITY" | "OWNER DRAWING";
-  amount: number;
-  transaction_date: string;
-}
 
 export interface FinancialMetrics {
   totalRevenue: number;
@@ -197,7 +187,6 @@ function sumExpenses(txs: Array<{ type: string; amount: number }>): number {
  *   INCOME  + EQUITY        → add to balance
  *   EXPENSE + OWNER DRAWING → subtract from balance
  *
- * Operates on ContextRow[] (lightweight, all-time rows from Q2).
  */
 function runningCashBalance(txs: Array<{ type: string; amount: number }>): number {
   return txs.reduce((bal, t) => {
@@ -376,47 +365,31 @@ function buildInsights(
 // ─────────────────────────────────────────────────────────────────────────────
 // DERIVE ALL DASHBOARD DATA
 //
-// Accepts two separate arrays:
-//
-//   rangeTx   — full Transaction rows for the user-selected period (Q1).
-//               Already date-filtered at the DB. A second JS filter is applied
-//               here as a safety net (also makes mock mode work correctly).
-//
-//   contextTx — lightweight ContextRows for ALL TIME (Q2).
-//               Used for:
-//               • All-time cash balance (no date filter — intentional)
-//               • Trailing 6-month cash flow chart (JS-filtered per month)
-//               • Prior-period comparison (JS-filtered to prior range)
-//
-// This separation is the core of the two-query architecture:
-//   Q1 is date-filtered at the DB → only the data you care about comes over
-//   Q2 is all-time but tiny (3 columns) → covers balance + chart without a
-//   second heavy round-trip
+// Takes the full allTx array and the active date range.
+// All slicing is done here in JS — no split between range rows and context rows.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function deriveFinancialData(
-  rangeTx: Transaction[],
-  contextTx: ContextRow[],
+  allTx: Transaction[],
   activeRange: DateRange,
 ): Omit<FinancialData, "loading" | "error" | "refetch"> {
 
-  // JS safety filter: in live mode this is a near-zero-cost pass-through since
-  // DB already filtered. In mock mode it correctly slices mock data by date.
-  const periodTx = filterByRange(rangeTx, activeRange);
+  // Period slice — all transactions that fall within the selected date range
+  const periodTx = filterByRange(allTx, activeRange);
 
-  // Prior period — filtered from lightweight contextTx in JS
+  // Prior period — same duration, shifted one period back
   const prior    = priorPeriod(activeRange);
-  const priorCtx = filterByRange(contextTx, prior);
+  const priorTx  = filterByRange(allTx, prior);
 
   // ── KPI metrics ──────────────────────────────────────────────────────────
   const thisRevenue  = sumIncome(periodTx);
   const thisExpenses = sumExpenses(periodTx);
-  const lastRevenue  = sumIncome(priorCtx);
-  const lastExpenses = sumExpenses(priorCtx);
+  const lastRevenue  = sumIncome(priorTx);
+  const lastExpenses = sumExpenses(priorTx);
   const netProfit    = thisRevenue - thisExpenses;
   const profitMargin = thisRevenue > 0 ? (netProfit / thisRevenue) * 100 : 0;
-  // Cash balance: all-time, all four types — uses the full contextTx set
-  const cashBalance  = runningCashBalance(contextTx);
+  // Cash balance: all-time, all four types — uses the full allTx set
+  const cashBalance  = runningCashBalance(allTx);
 
   const metrics: FinancialMetrics = {
     totalRevenue:   thisRevenue,
@@ -439,7 +412,7 @@ function deriveFinancialData(
     const mStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const mEnd   = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59, 999);
     const label  = mStart.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
-    const mRows  = filterByRange(contextTx, { from: mStart, to: mEnd });
+    const mRows  = filterByRange(allTx, { from: mStart, to: mEnd });
     cashFlow.push({
       month:    label,
       income:   sumIncome(mRows),
@@ -520,33 +493,19 @@ const MOCK_TRANSACTIONS: Transaction[] = [
   { id: "t17", user_id: "mock", transaction_date: "2026-03-01", description: "Office Supplies & Misc",                  amount:  170, category: "Other",    type: "EXPENSE",       payee: null,                  is_deductible: false, notes: null,                   created_at: "2026-03-01T12:00:00Z" },
 ];
 
-const MOCK_CONTEXT: ContextRow[] = MOCK_TRANSACTIONS.map((t) => ({
-  type: t.type,
-  amount: t.amount,
-  transaction_date: t.transaction_date,
-}));
-
 // ─────────────────────────────────────────────────────────────────────────────
 // HOOK
 //
-// TWO-QUERY ARCHITECTURE
+// SINGLE-QUERY ARCHITECTURE
 //
-// Q1 — Period query (SELECT *)
-//   Filters at the DB using .gte/.lte on transaction_date.
-//   Returns full rows for the selected period only.
-//   Used for: KPI cards, expense breakdown, income by client, transaction table.
+// One SELECT * query fetches all transactions for the user (no date filter).
+// All slicing — period metrics, prior-period comparison, 6-month cash flow,
+// all-time cash balance — is done in JS inside deriveFinancialData.
 //
-// Q2 — Context query (SELECT type, amount, transaction_date)
-//   No date filter. Returns all rows, but only 3 lightweight columns.
-//   Used for: all-time cash balance, trailing 6-month cash flow chart,
-//             prior-period comparison (JS-filtered from this tiny set).
-//
-// Both run in parallel via Promise.all — latency is max(Q1, Q2), not Q1+Q2.
-//
-// Why not JS-filter a single "fetch all" query?
-//   Pushing the date filter to the DB means the heavy SELECT * payload is
-//   proportional to the selected period, not the entire transaction history.
-//   At 199 rows this makes little difference; at 5 000+ rows it matters.
+// This avoids the earlier two-query split where Q1 (date-filtered) and Q2
+// (all-time lightweight) could fall out of sync: if Q1 returned null/empty
+// while Q2 succeeded, the transaction table, KPIs, and income-by-client chart
+// would silently reset to empty while the cash flow chart kept updating.
 //
 // All React hooks are called unconditionally at the top of the function.
 // LIVE_MODE and TABLE_HAS_USER_ID only affect what happens INSIDE the
@@ -557,17 +516,10 @@ export function useFinancialData(dateRange?: DateRange): FinancialData {
   const { user } = useAuth();
   const activeRange = dateRange ?? last30DaysRange();
 
-  // Stable string representations of the date range for useCallback deps.
-  // Using local date strings avoids UTC-shift bugs with toISOString().
-  const fromStr = toLocalDateStr(activeRange.from);
-  const toStr   = toLocalDateStr(activeRange.to);
-
-  // Q1 state: full Transaction rows for the selected period
-  const [rangeTx,   setRangeTx]   = useState<Transaction[]>(LIVE_MODE ? [] : MOCK_TRANSACTIONS);
-  // Q2 state: lightweight all-time rows for cash balance and cash-flow chart
-  const [contextTx, setContextTx] = useState<ContextRow[]>(LIVE_MODE ? [] : MOCK_CONTEXT);
-  const [loading,   setLoading]   = useState<boolean>(LIVE_MODE);
-  const [error,     setError]     = useState<string | null>(null);
+  // All transactions for this user — date filtering happens in JS
+  const [allTx,  setAllTx]  = useState<Transaction[]>(LIVE_MODE ? [] : MOCK_TRANSACTIONS);
+  const [loading, setLoading] = useState<boolean>(LIVE_MODE);
+  const [error,   setError]   = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!LIVE_MODE) return;
@@ -576,38 +528,20 @@ export function useFinancialData(dateRange?: DateRange): FinancialData {
     setError(null);
 
     try {
-      // Q1: Full rows, date-filtered at the DB level
-      let q1 = supabase
+      let query = supabase
         .from("optimai_transactions")
         .select("*")
-        .gte("transaction_date", fromStr)
-        .lte("transaction_date", toStr)
         .order("transaction_date", { ascending: false });
-      if (TABLE_HAS_USER_ID && user) q1 = q1.eq("user_id", user.id);
 
-      // Q2: Lightweight columns, all-time — no date filter (needed for cash balance)
-      let q2 = supabase
-        .from("optimai_transactions")
-        .select("type, amount, transaction_date")
-        .order("transaction_date", { ascending: true });
-      if (TABLE_HAS_USER_ID && user) q2 = q2.eq("user_id", user.id);
+      if (TABLE_HAS_USER_ID && user) query = query.eq("user_id", user.id);
 
-      // Run both in parallel — latency is max(Q1, Q2), not Q1+Q2
-      const [rangeRes, contextRes] = await Promise.all([q1, q2]);
+      const { data, error: qErr } = await query;
 
-      if (rangeRes.error) {
-        throw new Error(
-          `Period query failed: ${rangeRes.error.message} (code: ${rangeRes.error.code})`
-        );
-      }
-      if (contextRes.error) {
-        throw new Error(
-          `Context query failed: ${contextRes.error.message} (code: ${contextRes.error.code})`
-        );
+      if (qErr) {
+        throw new Error(`Query failed: ${qErr.message} (code: ${qErr.code})`);
       }
 
-      setRangeTx((rangeRes.data as Transaction[]) ?? []);
-      setContextTx((contextRes.data as ContextRow[]) ?? []);
+      setAllTx((data as Transaction[]) ?? []);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to load financial data.";
       setError(message);
@@ -615,32 +549,35 @@ export function useFinancialData(dateRange?: DateRange): FinancialData {
     } finally {
       setLoading(false);
     }
-  // fromStr / toStr change when the user picks a new date range → new DB call fires
-  }, [user, fromStr, toStr]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Initial load + re-fetch whenever user or date range changes
+  // Initial load + re-fetch whenever the user changes
   useEffect(() => {
     if (!LIVE_MODE) return;
     fetchData();
   }, [fetchData]);
 
-  // Real-time subscription: re-fetch on any table mutation
+  // Real-time subscription: re-fetch on any mutation for this user's rows.
+  // Channel name is scoped to user.id so multiple hook instances don't collide.
   useEffect(() => {
-    if (!LIVE_MODE) return;
+    if (!LIVE_MODE || !user) return;
+
+    const channelName = `finances-realtime-${user.id}`;
+    const filter      = `user_id=eq.${user.id}`;
 
     const channel = supabase
-      .channel("finances-realtime")
+      .channel(channelName)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "optimai_transactions" },
+        { event: "*", schema: "public", table: "optimai_transactions", filter },
         () => { fetchData(); }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [fetchData]);
+  }, [user, fetchData]);
 
-  const derived = deriveFinancialData(rangeTx, contextTx, activeRange);
+  const derived = deriveFinancialData(allTx, activeRange);
 
   return { ...derived, loading, error, refetch: fetchData };
 }
