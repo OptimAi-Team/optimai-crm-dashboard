@@ -169,13 +169,7 @@ function filterByRange<T extends { transaction_date: string }>(
 ): T[] {
   const from = toLocalDateStr(range.from);
   const to   = toLocalDateStr(range.to);
-  // Slice to 10 chars: Supabase may return "2026-04-16T00:00:00" for date columns.
-  // "2026-04-16T..." > "2026-04-16" in string order, so the upper-bound check
-  // would silently drop any transaction whose date equals the range end.
-  return rows.filter((r) => {
-    const d = r.transaction_date.slice(0, 10);
-    return d >= from && d <= to;
-  });
+  return rows.filter((r) => r.transaction_date >= from && r.transaction_date <= to);
 }
 
 /** Revenue = INCOME transactions only (P&L view). */
@@ -563,17 +557,16 @@ export function useFinancialData(dateRange?: DateRange): FinancialData {
         throw new Error(`Query failed: ${qErr.message} (code: ${qErr.code})`);
       }
 
-      // Normalize at ingestion so all downstream code sees clean types:
-      //   transaction_date → strip any time component ("2026-04-16T00:00:00" → "2026-04-16")
-      //   amount           → coerce to number (Supabase numeric(12,2) arrives as string)
+      // Coerce amount to number — Supabase returns numeric(12,2) as a string.
+      // transaction_date is a date column so it arrives as "YYYY-MM-DD" already.
       const rows: Transaction[] = ((data as Transaction[]) ?? []).map(t => ({
         ...t,
-        transaction_date: t.transaction_date.slice(0, 10),
         amount: Number(t.amount),
       }));
 
       console.log(
-        "[useFinancialData] raw rows from Supabase:", rows.length,
+        "[useFinancialData] query user_id:", user?.id ?? "NO USER — RLS will block",
+        "\n  raw rows from Supabase:", rows.length,
         "\n  first 3 dates :", rows.slice(0, 3).map(r => r.transaction_date),
         "\n  first amount  :", rows[0]?.amount, "(type:", typeof rows[0]?.amount + ")",
         "\n  first type    :", rows[0]?.type,

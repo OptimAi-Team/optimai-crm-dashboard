@@ -67,6 +67,13 @@ function formatDate(dateStr: string): string {
 }
 
 export function TransactionTable({ transactions, onAddTransaction }: TransactionTableProps) {
+  console.log(
+    "[TransactionTable] received", transactions.length, "rows",
+    transactions.length > 0
+      ? `| first: { date: "${transactions[0].transaction_date}", amount: ${transactions[0].amount} (${typeof transactions[0].amount}), type: "${transactions[0].type}" }`
+      : "| (empty array)"
+  );
+
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "INCOME" | "EXPENSE" | "EQUITY" | "OWNER DRAWING">("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
