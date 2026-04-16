@@ -10,7 +10,7 @@ interface InsightRow {
   amount: number;
   type: string;
   category: string;
-  client_name: string | null;
+  payee: string | null;
   transaction_date: string;
 }
 
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
   // ── Fetch data ────────────────────────────────────────────────────────────────
   const { data, error } = await supabase
     .from("optimai_transactions")
-    .select("amount, type, category, client_name, transaction_date")
+    .select("amount, type, category, payee, transaction_date")
     .eq("user_id", user.id)
     .order("transaction_date", { ascending: true });
 
@@ -93,11 +93,13 @@ export async function GET(request: NextRequest) {
   const netProfit    = thisIncome - thisExpenses;
   const profitMargin = thisIncome > 0 ? (netProfit / thisIncome) * 100 : 0;
 
-  // Running cash balance (all-time)
-  const cashBalance = rows.reduce(
-    (bal, r) => bal + (r.type === "INCOME" ? r.amount : -r.amount),
-    0
-  );
+  // Running cash balance (all-time): INCOME+EQUITY add, EXPENSE+OWNER DRAWING subtract
+  const cashBalance = rows.reduce((bal, r) => {
+    const amt = Number(r.amount);
+    if (r.type === "INCOME"  || r.type === "EQUITY")        return bal + amt;
+    if (r.type === "EXPENSE" || r.type === "OWNER DRAWING") return bal - amt;
+    return bal;
+  }, 0);
 
   // Monthly net trend (last 3 months)
   const nets = [2, 1, 0].map((i) => {
@@ -121,7 +123,7 @@ export async function GET(request: NextRequest) {
   thisMonth
     .filter((r) => r.type === "INCOME")
     .forEach((r) => {
-      const key = r.client_name || "Unknown";
+      const key = r.payee || "Unknown";
       clientMap[key] = (clientMap[key] || 0) + r.amount;
     });
   const topClient    = Object.entries(clientMap).sort((a, b) => b[1] - a[1])[0];

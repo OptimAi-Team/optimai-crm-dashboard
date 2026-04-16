@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -63,15 +63,18 @@ function todayLocalDate(): string {
   ].join("-");
 }
 
-const CATEGORIES = [
-  "Service",
-  "Payroll",
-  "Software",
-  "Marketing",
-  "Operations",
-  "Travel",
-  "Equipment",
-  "Subscriptions",
+const CATEGORIES_BY_TYPE: Record<string, string[]> = {
+  INCOME:          ["Service", "Consulting", "Product", "Other"],
+  EXPENSE:         ["Payroll", "Software", "Marketing", "Operations", "Travel", "Equipment", "Subscriptions", "Other"],
+  EQUITY:          ["Equity", "Capital Injection", "Loan", "Other"],
+  "OWNER DRAWING": ["Draw", "Distribution", "Other"],
+};
+
+const ALL_CATEGORIES = [
+  "Service", "Consulting", "Product",
+  "Payroll", "Software", "Marketing", "Operations", "Travel", "Equipment", "Subscriptions",
+  "Equity", "Capital Injection", "Loan",
+  "Draw", "Distribution",
   "Other",
 ];
 
@@ -105,7 +108,15 @@ export function AddTransactionModal({
   });
 
   const selectedType = useWatch({ control: form.control, name: "type" });
-  const isExpense = selectedType === "EXPENSE";
+  const isExpense    = selectedType === "EXPENSE";
+  const categories   = CATEGORIES_BY_TYPE[selectedType] ?? ALL_CATEGORIES;
+
+  // Reset category when type changes so stale value from prior type is cleared
+  const prevTypeRef = React.useRef(selectedType);
+  if (prevTypeRef.current !== selectedType) {
+    prevTypeRef.current = selectedType;
+    form.setValue("category", "");
+  }
 
   const onSubmit = async (values: FormValues) => {
     setSubmitting(true);
@@ -264,7 +275,7 @@ export function AddTransactionModal({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {CATEGORIES.map((c) => (
+                        {categories.map((c) => (
                           <SelectItem key={c} value={c}>{c}</SelectItem>
                         ))}
                       </SelectContent>

@@ -19,7 +19,7 @@ export function ExpenseByCategory({ data }: ExpenseByCategoryProps) {
         Expenses by Category
       </h3>
       <p className="text-sm text-muted-foreground mb-4">
-        This month&apos;s spending breakdown
+        Spending breakdown for selected period
       </p>
 
       {data.length === 0 ? (

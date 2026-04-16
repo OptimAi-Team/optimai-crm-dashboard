@@ -47,7 +47,7 @@ export function IncomeByClient({ data }: IncomeByClientProps) {
         Income by Client
       </h3>
       <p className="text-sm text-muted-foreground mb-5">
-        Revenue breakdown by client this month
+        Revenue breakdown by client for selected period
       </p>
 
       {data.length === 0 ? (

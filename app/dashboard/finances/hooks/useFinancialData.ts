@@ -110,9 +110,12 @@ export interface FinancialData {
 // DATE RANGE HELPERS  (exported — consumed by page.tsx for preset buttons)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Today back 29 days — a rolling 30-day window ending right now. */
+/** Today back 29 days — a rolling 30-day window.
+ *  `to` extends 1 day forward so users in UTC+ timezones who are already
+ *  on "tomorrow" still see their just-entered transactions in KPIs. */
 export function last30DaysRange(): DateRange {
   const to   = new Date();
+  to.setDate(to.getDate() + 1); // +1: include UTC+ "today" entries
   to.setHours(23, 59, 59, 999);
   const from = new Date();
   from.setDate(from.getDate() - 29);
@@ -168,14 +171,9 @@ function filterByRange<T extends { transaction_date: string }>(
   range: DateRange,
 ): T[] {
   const from = toLocalDateStr(range.from);
-  // Advance range.to by 1 day and use strict-less-than so today's transactions
-  // always pass. "2026-04-17" < "2026-04-18" is unambiguous regardless of
-  // timezone, whereas "<= today" can fail when local midnight doesn't align
-  // with how getDate() resolves.
-  const toNext = new Date(range.to);
-  toNext.setDate(toNext.getDate() + 1);
-  const to = toLocalDateStr(toNext);
-  return rows.filter((r) => r.transaction_date >= from && r.transaction_date < to);
+  const to   = toLocalDateStr(range.to);
+  // Both sides are "YYYY-MM-DD" strings — lexicographic comparison is exact.
+  return rows.filter((r) => r.transaction_date >= from && r.transaction_date <= to);
 }
 
 /** Revenue = INCOME transactions only (P&L view). */

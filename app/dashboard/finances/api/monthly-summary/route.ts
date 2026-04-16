@@ -78,10 +78,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: allError.message }, { status: 400 });
   }
 
-  const cash_balance = (allRows ?? []).reduce(
-    (bal, r) => bal + (r.type === "INCOME" ? r.amount : -r.amount),
-    0
-  );
+  const cash_balance = (allRows ?? []).reduce((bal, r) => {
+    const amt = Number(r.amount);
+    if (r.type === "INCOME"  || r.type === "EQUITY")        return bal + amt;
+    if (r.type === "EXPENSE" || r.type === "OWNER DRAWING") return bal - amt;
+    return bal;
+  }, 0);
 
   return NextResponse.json(
     {
