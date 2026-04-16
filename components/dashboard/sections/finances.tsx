@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useFinancialData } from "@/app/dashboard/finances/hooks/useFinancialData";
 import { MetricCard } from "@/app/dashboard/finances/components/MetricCard";
 import { CashFlowChart } from "@/app/dashboard/finances/components/CashFlowChart";
@@ -7,6 +8,7 @@ import { ExpenseByCategory } from "@/app/dashboard/finances/components/ExpenseBy
 import { IncomeByClient } from "@/app/dashboard/finances/components/IncomeByClient";
 import { AIInsights } from "@/app/dashboard/finances/components/AIInsights";
 import { TransactionTable } from "@/app/dashboard/finances/components/TransactionTable";
+import { AddTransactionModal } from "@/app/dashboard/finances/components/AddTransactionModal";
 import { DollarSign, TrendingDown, TrendingUp, Percent, Landmark } from "lucide-react";
 
 function formatCurrency(value: number): string {
@@ -17,6 +19,8 @@ function formatCurrency(value: number): string {
 }
 
 export function FinancesSection() {
+  const [showAddModal, setShowAddModal] = useState(false);
+
   const {
     metrics,
     cashFlow,
@@ -26,6 +30,7 @@ export function FinancesSection() {
     insights,
     loading,
     error,
+    refetch,
   } = useFinancialData();
 
   if (loading) {
@@ -109,7 +114,16 @@ export function FinancesSection() {
       </div>
 
       {/* Transaction Table */}
-      <TransactionTable transactions={transactions} />
+      <TransactionTable
+        transactions={transactions}
+        onAddTransaction={() => setShowAddModal(true)}
+      />
+
+      <AddTransactionModal
+        open={showAddModal}
+        onOpenChange={setShowAddModal}
+        onSuccess={refetch}
+      />
     </div>
   );
 }

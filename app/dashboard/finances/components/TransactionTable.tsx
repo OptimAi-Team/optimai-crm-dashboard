@@ -18,11 +18,13 @@ import {
   ArrowDownLeft,
   ChevronLeft,
   ChevronRight,
+  Plus,
 } from "lucide-react";
 import type { Transaction } from "../hooks/useFinancialData";
 
 interface TransactionTableProps {
   transactions: Transaction[];
+  onAddTransaction?: () => void;
 }
 
 const PAGE_SIZE = 15;
@@ -64,7 +66,7 @@ function formatDate(dateStr: string): string {
   });
 }
 
-export function TransactionTable({ transactions }: TransactionTableProps) {
+export function TransactionTable({ transactions, onAddTransaction }: TransactionTableProps) {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "INCOME" | "EXPENSE" | "EQUITY" | "OWNER DRAWING">("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -110,6 +112,12 @@ export function TransactionTable({ transactions }: TransactionTableProps) {
             {filtered.length} transaction{filtered.length !== 1 ? "s" : ""}
           </p>
         </div>
+        {onAddTransaction && (
+          <Button size="sm" onClick={onAddTransaction} className="h-8 gap-1.5 shrink-0">
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add Transaction</span>
+          </Button>
+        )}
       </div>
 
       {/* Filters */}

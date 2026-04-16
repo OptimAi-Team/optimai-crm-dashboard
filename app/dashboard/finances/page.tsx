@@ -30,7 +30,6 @@ import {
   RefreshCw,
   ArrowLeft,
   Calendar,
-  Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -217,16 +216,6 @@ export default function FinancesDashboardPage() {
                 Custom
               </button>
             </div>
-
-            {/* Add Transaction */}
-            <Button
-              size="sm"
-              onClick={() => setShowAddModal(true)}
-              className="h-9 gap-1.5"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Add Transaction</span>
-            </Button>
 
             {/* Refresh */}
             <Button
@@ -426,7 +415,10 @@ export default function FinancesDashboardPage() {
           {loading ? (
             <TableSkeleton />
           ) : (
-            <TransactionTable transactions={transactions} />
+            <TransactionTable
+              transactions={transactions}
+              onAddTransaction={() => setShowAddModal(true)}
+            />
           )}
         </section>
       </main>
