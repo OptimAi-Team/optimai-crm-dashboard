@@ -469,17 +469,24 @@ function deriveFinancialData(
   // ── Insights ─────────────────────────────────────────────────────────────
   const insights = buildInsights(metrics, cashFlow, expensesByCategory, incomeByClient);
 
+  // NOTE: transactions bypasses the period filter and shows ALL rows so we can
+  // confirm data reaches the component. Re-add filterByRange once confirmed.
+  const tableRows = [...allTx].sort(
+    (a, b) => b.transaction_date.localeCompare(a.transaction_date)
+  );
+
+  console.log(
+    "[useFinancialData] → TransactionTable will receive:", tableRows.length, "rows",
+    "\n  periodTx (filtered):", periodTx.length,
+    "\n  sample dates:", tableRows.slice(0, 3).map(r => r.transaction_date),
+  );
+
   return {
     metrics,
     cashFlow,
     expensesByCategory,
     incomeByClient,
-    // Transaction table: period-filtered, newest first
-    transactions: [...periodTx].sort(
-      (a, b) =>
-        new Date(b.transaction_date).getTime() -
-        new Date(a.transaction_date).getTime()
-    ),
+    transactions: tableRows,
     insights,
   };
 }
@@ -556,11 +563,22 @@ export function useFinancialData(dateRange?: DateRange): FinancialData {
         throw new Error(`Query failed: ${qErr.message} (code: ${qErr.code})`);
       }
 
-      const rows = (data as Transaction[]) ?? [];
-      console.log("[useFinancialData] raw rows:", rows.length,
-        "| first 3 dates:", rows.slice(0, 3).map(r => r.transaction_date),
-        "| first amount type:", typeof rows[0]?.amount, "=", rows[0]?.amount
+      // Normalize at ingestion so all downstream code sees clean types:
+      //   transaction_date → strip any time component ("2026-04-16T00:00:00" → "2026-04-16")
+      //   amount           → coerce to number (Supabase numeric(12,2) arrives as string)
+      const rows: Transaction[] = ((data as Transaction[]) ?? []).map(t => ({
+        ...t,
+        transaction_date: t.transaction_date.slice(0, 10),
+        amount: Number(t.amount),
+      }));
+
+      console.log(
+        "[useFinancialData] raw rows from Supabase:", rows.length,
+        "\n  first 3 dates :", rows.slice(0, 3).map(r => r.transaction_date),
+        "\n  first amount  :", rows[0]?.amount, "(type:", typeof rows[0]?.amount + ")",
+        "\n  first type    :", rows[0]?.type,
       );
+
       setAllTx(rows);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to load financial data.";
