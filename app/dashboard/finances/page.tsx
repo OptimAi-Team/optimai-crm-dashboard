@@ -201,21 +201,30 @@ export default function FinancesDashboardPage() {
     }
   }, [transactions, loading]);
 
-  // Load saved filter preference from localStorage
+  // Load saved filter preference from localStorage - after initial render to avoid hydration mismatches
+  const [isClient, setIsClient] = useState(false);
+  
+  // Set isClient to true after hydration
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const savedFilter = localStorage.getItem(FILTER_STORAGE_KEY);
-        if (savedFilter && Object.keys(DATE_RANGE_FUNCTIONS).includes(savedFilter)) {
-          const filterKey = savedFilter as FilterKey;
-          setActiveFilter(filterKey);
-          setDateRange(DATE_RANGE_FUNCTIONS[filterKey as keyof typeof DATE_RANGE_FUNCTIONS](allTransactions));
-        }
-      } catch (err) {
-        console.error('Error loading saved filter preference:', err);
+    setIsClient(true);
+  }, []);
+  
+  // Load saved filter preference after we know we're on the client
+  useEffect(() => {
+    if (!isClient) return;
+    
+    try {
+      const savedFilter = localStorage.getItem(FILTER_STORAGE_KEY);
+      if (savedFilter && Object.keys(DATE_RANGE_FUNCTIONS).includes(savedFilter)) {
+        const filterKey = savedFilter as FilterKey;
+        console.log(`Loading saved filter: ${filterKey}`);
+        setActiveFilter(filterKey);
+        setDateRange(DATE_RANGE_FUNCTIONS[filterKey as keyof typeof DATE_RANGE_FUNCTIONS](allTransactions));
       }
+    } catch (err) {
+      console.error('Error loading saved filter preference:', err);
     }
-  }, [allTransactions]);
+  }, [isClient, allTransactions]);
 
   // Redirect if not authenticated
   if (!authLoading && !user) {
@@ -258,7 +267,7 @@ export default function FinancesDashboardPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border px-6 py-4">
+      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border px-6 py-4 overflow-visible">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           {/* Left: back + title */}
           <div className="flex items-center gap-3">
@@ -289,25 +298,30 @@ export default function FinancesDashboardPage() {
                   variant="outline" 
                   size="sm" 
                   className="h-9 gap-1.5"
+                  onClick={() => console.log("Filter button clicked")}
+                  id="date-filter-button"
                 >
                   <Calendar className="w-3.5 h-3.5" />
                   <span>{PRESETS.find(p => p.key === activeFilter)?.label || "Custom"}</span>
                   <ChevronDown className="w-3.5 h-3.5 text-muted-foreground ml-1" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuContent align="end" className="w-48 z-50" sideOffset={4} collisionPadding={8}>
                 <DropdownMenuGroup>
-                  {PRESETS.map((preset) => (
-                    <DropdownMenuItem 
-                      key={preset.key} 
-                      onClick={() => handlePreset(preset)}
-                      className={cn(
-                        "cursor-pointer",
-                        activeFilter === preset.key && "font-medium bg-secondary/50"
-                      )}
-                    >
-                      {preset.label}
-                    </DropdownMenuItem>
+                   {PRESETS.map((preset) => (
+                     <DropdownMenuItem 
+                       key={preset.key} 
+                       onClick={() => {
+                         console.log(`Selected preset: ${preset.key}`);
+                         handlePreset(preset);
+                       }}
+                       className={cn(
+                         "cursor-pointer",
+                         activeFilter === preset.key && "font-medium bg-secondary/50"
+                       )}
+                     >
+                       {preset.label}
+                     </DropdownMenuItem>
                   ))}
                   <DropdownMenuItem 
                     onClick={() => setShowCustom(true)}
