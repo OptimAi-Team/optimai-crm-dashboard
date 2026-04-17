@@ -201,30 +201,23 @@ export default function FinancesDashboardPage() {
     }
   }, [transactions, loading]);
 
-  // Load saved filter preference from localStorage - after initial render to avoid hydration mismatches
-  const [isClient, setIsClient] = useState(false);
-  
-  // Set isClient to true after hydration
+  // Load saved filter preference from localStorage (safely)
   useEffect(() => {
-    setIsClient(true);
-  }, []);
-  
-  // Load saved filter preference after we know we're on the client
-  useEffect(() => {
-    if (!isClient) return;
+    // Only run on client, after component mounts
+    if (typeof window === 'undefined') return;
     
     try {
       const savedFilter = localStorage.getItem(FILTER_STORAGE_KEY);
       if (savedFilter && Object.keys(DATE_RANGE_FUNCTIONS).includes(savedFilter)) {
         const filterKey = savedFilter as FilterKey;
-        console.log(`Loading saved filter: ${filterKey}`);
         setActiveFilter(filterKey);
         setDateRange(DATE_RANGE_FUNCTIONS[filterKey as keyof typeof DATE_RANGE_FUNCTIONS](allTransactions));
       }
     } catch (err) {
-      console.error('Error loading saved filter preference:', err);
+      // Just fail silently and use default
+      console.error('LocalStorage error (non-fatal):', err);
     }
-  }, [isClient, allTransactions]);
+  }, [allTransactions]); // Only depends on transactions, not extra state
 
   // Redirect if not authenticated
   if (!authLoading && !user) {
@@ -233,15 +226,19 @@ export default function FinancesDashboardPage() {
   }
 
   const handlePreset = useCallback((preset: FilterPreset) => {
+    console.log(`Selecting preset: ${preset.key}`);
     setActiveFilter(preset.key);
     setDateRange(preset.range(allTransactions));
     setShowCustom(false);
 
-    // Save preference to localStorage
-    try {
-      localStorage.setItem(FILTER_STORAGE_KEY, preset.key);
-    } catch (err) {
-      console.error('Error saving filter preference:', err);
+    // Save preference to localStorage (safely)
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(FILTER_STORAGE_KEY, preset.key);
+      } catch (err) {
+        // Non-fatal error
+        console.error('Error saving filter preference:', err);
+      }
     }
   }, [allTransactions]);
 
@@ -298,8 +295,6 @@ export default function FinancesDashboardPage() {
                   variant="outline" 
                   size="sm" 
                   className="h-9 gap-1.5"
-                  onClick={() => console.log("Filter button clicked")}
-                  id="date-filter-button"
                 >
                   <Calendar className="w-3.5 h-3.5" />
                   <span>{PRESETS.find(p => p.key === activeFilter)?.label || "Custom"}</span>
@@ -311,10 +306,7 @@ export default function FinancesDashboardPage() {
                    {PRESETS.map((preset) => (
                      <DropdownMenuItem 
                        key={preset.key} 
-                       onClick={() => {
-                         console.log(`Selected preset: ${preset.key}`);
-                         handlePreset(preset);
-                       }}
+                       onClick={() => handlePreset(preset)}
                        className={cn(
                          "cursor-pointer",
                          activeFilter === preset.key && "font-medium bg-secondary/50"

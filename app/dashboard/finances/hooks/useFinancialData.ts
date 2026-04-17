@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createClientSideClient } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 
@@ -624,21 +624,20 @@ const MOCK_TRANSACTIONS: Transaction[] = [
 export function useFinancialData(dateRange?: DateRange): FinancialData {
   const { user } = useAuth();
   const activeRange = dateRange ?? last30DaysRange();
-  
-  // Store the active range internally so fetchData can access it
-  const activeRangeRef = useRef<DateRange>(activeRange);
-  useEffect(() => {
-    activeRangeRef.current = activeRange;
-  }, [activeRange]);
 
-  // All transactions for this user — initial date filtering happens on server
-  const [allTx, setAllTx] = useState<Transaction[]>(LIVE_MODE ? [] : MOCK_TRANSACTIONS);
+  // All transactions for this user — date filtering happens in JS
+  const [allTx,  setAllTx]  = useState<Transaction[]>(LIVE_MODE ? [] : MOCK_TRANSACTIONS);
   const [loading, setLoading] = useState<boolean>(LIVE_MODE);
-  const [error, setError] = useState<string | null>(null);
+  const [error,   setError]   = useState<string | null>(null);
 
-  const fetchAllData = useCallback(async () => {
-    if (!LIVE_MODE) return null;
+  const fetchData = useCallback(async () => {
+    if (!LIVE_MODE) return;
+
+    console.log("FETCH TRIGGERED"); // Debug log to detect infinite loops
     
+    setLoading(true);
+    setError(null);
+
     try {
       let query = supabase
         .from("optimai_transactions")
@@ -650,70 +649,19 @@ export function useFinancialData(dateRange?: DateRange): FinancialData {
       const { data, error: qErr } = await query;
 
       if (qErr) {
-        console.error(`[useFinancialData] Error fetching all data: ${qErr.message} (code: ${qErr.code})`);
-        return null;
+        throw new Error(`Query failed: ${qErr.message} (code: ${qErr.code})`);
       }
 
       // Coerce amount to number — Supabase returns numeric(12,2) as a string.
-      return ((data as Transaction[]) ?? []).map(t => ({
+      // transaction_date is a date column so it arrives as "YYYY-MM-DD" already.
+      const transactions = ((data as Transaction[]) ?? []).map(t => ({
         ...t,
         amount: Number(t.amount),
       }));
-    } catch (e) {
-      console.error("[useFinancialData] Failed to fetch all transactions:", e);
-      return null;
-    }
-  }, [user]);
-  
-  const fetchData = useCallback(async () => {
-    if (!LIVE_MODE) return;
-
-    setLoading(true);
-    setError(null);
-    
-    try {
-      // Check if we need server-side filtering
-      const isAllTime = 
-        activeRangeRef.current.from.getFullYear() <= 2010 && 
-        activeRangeRef.current.to.getFullYear() >= 2050;
-      
-      let transactions: Transaction[] = [];
-      
-      if (isAllTime) {
-        // For "All time" we need to fetch everything
-        const allData = await fetchAllData();
-        if (allData) transactions = allData;
-      } else {
-        // For specific date ranges, filter on the server
-        const fromStr = toLocalDateStr(activeRangeRef.current.from);
-        const toStr = toLocalDateStr(activeRangeRef.current.to);
-  
-        console.log(`[useFinancialData] Filtering on server: ${fromStr} to ${toStr}`);
-        
-        let query = supabase
-          .from("optimai_transactions")
-          .select("*")
-          .gte("transaction_date", fromStr)
-          .lte("transaction_date", toStr)
-          .order("transaction_date", { ascending: false });
-  
-        if (TABLE_HAS_USER_ID && user) query = query.eq("user_id", user.id);
-  
-        const { data, error: qErr } = await query;
-
-        if (qErr) {
-          throw new Error(`Query failed: ${qErr.message} (code: ${qErr.code})`);
-        }
-
-        transactions = ((data as Transaction[]) ?? []).map(t => ({
-          ...t,
-          amount: Number(t.amount),
-        }));
-      }
 
       console.log(
         "[useFinancialData] query user_id:", user?.id ?? "NO USER — RLS will block",
-        "\n  raw rows from filtered Supabase:", transactions.length,
+        "\n  raw rows from Supabase:", transactions.length,
         "\n  first 3 dates :", transactions.slice(0, 3).map((r) => r.transaction_date),
         "\n  first amount  :", transactions[0]?.amount, "(type:", typeof transactions[0]?.amount + ")",
         "\n  first type    :", transactions[0]?.type,
@@ -727,28 +675,13 @@ export function useFinancialData(dateRange?: DateRange): FinancialData {
     } finally {
       setLoading(false);
     }
-  }, [user, fetchAllData, activeRangeRef]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Initial load + re-fetch whenever the user or date range changes
+  // Initial load + re-fetch whenever the user changes
   useEffect(() => {
     if (!LIVE_MODE) return;
     fetchData();
-  }, [fetchData, activeRange]);
-
-  // Also fetch all data for all-time metrics when user changes
-  useEffect(() => {
-    if (!LIVE_MODE) return;
-    
-    const getAllTimeData = async () => {
-      const allData = await fetchAllData();
-      if (allData && allData.length > 0) {
-        console.log(`[useFinancialData] Cached ${allData.length} all-time records for metrics calculation`);
-        setAllTx(allData);
-      }
-    };
-    
-    getAllTimeData();
-  }, [fetchAllData]);
+  }, [fetchData]);
 
   // Real-time subscription: re-fetch on any mutation for this user's rows.
   // Channel name is scoped to user.id so multiple hook instances don't collide.
