@@ -108,14 +108,37 @@ export interface FinancialData {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DATE RANGE HELPERS  (exported — consumed by page.tsx for preset buttons)
+//
+// All `to` values use end-of-day in local time.
+// `todayRange` and `last7DaysRange` extend `to` by +1 day so users in UTC+
+// timezones who are already on "tomorrow" still see their entries.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Today back 29 days — a rolling 30-day window.
- *  `to` extends 1 day forward so users in UTC+ timezones who are already
- *  on "tomorrow" still see their just-entered transactions in KPIs. */
+/** Just today (local date). Extends +1 day so UTC+ users see their entries. */
+export function todayRange(): DateRange {
+  const from = new Date();
+  from.setHours(0, 0, 0, 0);
+  const to = new Date();
+  to.setDate(to.getDate() + 1); // +1: UTC+ timezone coverage
+  to.setHours(23, 59, 59, 999);
+  return { from, to };
+}
+
+/** Rolling 7-day window. Extends +1 day for UTC+ coverage. */
+export function last7DaysRange(): DateRange {
+  const to = new Date();
+  to.setDate(to.getDate() + 1);
+  to.setHours(23, 59, 59, 999);
+  const from = new Date();
+  from.setDate(from.getDate() - 6);
+  from.setHours(0, 0, 0, 0);
+  return { from, to };
+}
+
+/** Rolling 30-day window. Extends +1 day for UTC+ coverage. */
 export function last30DaysRange(): DateRange {
-  const to   = new Date();
-  to.setDate(to.getDate() + 1); // +1: include UTC+ "today" entries
+  const to = new Date();
+  to.setDate(to.getDate() + 1);
   to.setHours(23, 59, 59, 999);
   const from = new Date();
   from.setDate(from.getDate() - 29);
@@ -123,6 +146,7 @@ export function last30DaysRange(): DateRange {
   return { from, to };
 }
 
+/** Current calendar month, Jan 1 → last day. */
 export function thisMonthRange(): DateRange {
   const now = new Date();
   return {
@@ -131,6 +155,67 @@ export function thisMonthRange(): DateRange {
   };
 }
 
+/** The full previous calendar month. */
+export function lastMonthRange(): DateRange {
+  const now = new Date();
+  return {
+    from: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+    to:   new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999),
+  };
+}
+
+/** Current calendar quarter (Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec). */
+export function thisQuarterRange(): DateRange {
+  const now = new Date();
+  const qStartMonth = Math.floor(now.getMonth() / 3) * 3; // 0, 3, 6, or 9
+  return {
+    from: new Date(now.getFullYear(), qStartMonth, 1),
+    to:   new Date(now.getFullYear(), qStartMonth + 3, 0, 23, 59, 59, 999),
+  };
+}
+
+/** Current calendar year, Jan 1 → Dec 31. */
+export function thisYearRange(): DateRange {
+  const now = new Date();
+  return {
+    from: new Date(now.getFullYear(), 0, 1),
+    to:   new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999),
+  };
+}
+
+/** 
+ * All time range that dynamically determines date range based on available transactions.
+ * Falls back to a reasonable default range if no transactions exist.
+ */
+export function allTimeRange(transactions?: Transaction[]): DateRange {
+  if (transactions && transactions.length > 0) {
+    // Find earliest transaction date
+    const dates = transactions
+      .map(t => new Date(t.transaction_date + 'T00:00:00'))
+      .sort((a, b) => a.getTime() - b.getTime());
+    
+    const earliestDate = dates[0];
+    // Set the from date to the first day of the month for the earliest transaction
+    const from = new Date(
+      earliestDate.getFullYear(),
+      earliestDate.getMonth(),
+      1
+    );
+    
+    // Set end date to future to ensure we capture all transactions
+    const to = new Date(2100, 11, 31, 23, 59, 59, 999);
+    return { from, to };
+  }
+  
+  // Fallback to a reasonable range - 2 years ago to future
+  const now = new Date();
+  return {
+    from: new Date(now.getFullYear() - 2, 0, 1),
+    to:   new Date(2100, 11, 31, 23, 59, 59, 999),
+  };
+}
+
+/** @deprecated Use the individual range functions. Left for backward compat. */
 export function lastNMonthsRange(n: number): DateRange {
   const now = new Date();
   return {
@@ -139,12 +224,9 @@ export function lastNMonthsRange(n: number): DateRange {
   };
 }
 
+/** @deprecated Use thisYearRange. Left for backward compat. */
 export function ytdRange(): DateRange {
-  const now = new Date();
-  return {
-    from: new Date(now.getFullYear(), 0, 1),
-    to:   new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999),
-  };
+  return thisYearRange();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -381,18 +463,12 @@ function deriveFinancialData(
   activeRange: DateRange,
 ): Omit<FinancialData, "loading" | "error" | "refetch"> {
 
-  const fromStr = toLocalDateStr(activeRange.from);
-  const toStr   = toLocalDateStr(activeRange.to);
-  console.log("[useFinancialData] activeRange:", fromStr, "→", toStr,
-    "| allTx:", allTx.length);
-
   // Period slice — all transactions that fall within the selected date range
   const periodTx = filterByRange(allTx, activeRange);
-  console.log("[useFinancialData] periodTx after filter:", periodTx.length);
 
   // Prior period — same duration, shifted one period back
-  const prior    = priorPeriod(activeRange);
-  const priorTx  = filterByRange(allTx, prior);
+  const prior   = priorPeriod(activeRange);
+  const priorTx = filterByRange(allTx, prior);
 
   // ── KPI metrics ──────────────────────────────────────────────────────────
   const thisRevenue  = sumIncome(periodTx);
@@ -401,7 +477,7 @@ function deriveFinancialData(
   const lastExpenses = sumExpenses(priorTx);
   const netProfit    = thisRevenue - thisExpenses;
   const profitMargin = thisRevenue > 0 ? (netProfit / thisRevenue) * 100 : 0;
-  // Cash balance: all-time, all four types — uses the full allTx set
+  // Cash balance: always all-time — uses the full unfiltered allTx set
   const cashBalance  = runningCashBalance(allTx);
 
   const metrics: FinancialMetrics = {
@@ -415,15 +491,34 @@ function deriveFinancialData(
     profitChange:   pctChange(netProfit, lastRevenue - lastExpenses),
   };
 
-  // ── Trailing 6-month cash flow chart ─────────────────────────────────────
-  // Always shows the last 6 calendar months regardless of selected date filter.
-  // This gives the user a consistent trend line — switching to "Last 30 Days"
-  // still shows the full 6-month history in the chart.
-  const now = new Date();
+  // ── Cash flow chart — adapts to the selected date range ───────────────────
+  //
+  // Always uses monthly granularity.
+  // For ranges > 3 years (e.g. "All time"): show the last 12 calendar months.
+  // For everything else: show every calendar month that overlaps the range,
+  //   capped at 24 bars so the chart stays readable.
+  const rangeMonths =
+    (activeRange.to.getTime() - activeRange.from.getTime()) /
+    (30 * 24 * 60 * 60 * 1000);
+
+  let chartFrom: Date;
+  let chartTo: Date;
+
+  if (rangeMonths > 36) {
+    // Very wide range — anchor to last 12 calendar months
+    const now = new Date();
+    chartFrom = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+    chartTo   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+  } else {
+    chartFrom = new Date(activeRange.from.getFullYear(), activeRange.from.getMonth(), 1);
+    chartTo   = new Date(activeRange.to.getFullYear(), activeRange.to.getMonth() + 1, 0, 23, 59, 59, 999);
+  }
+
   const cashFlow: CashFlowDataPoint[] = [];
-  for (let i = 5; i >= 0; i--) {
-    const mStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const mEnd   = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59, 999);
+  let cur = new Date(chartFrom);
+  while (cur <= chartTo && cashFlow.length < 24) {
+    const mStart = new Date(cur.getFullYear(), cur.getMonth(), 1);
+    const mEnd   = new Date(cur.getFullYear(), cur.getMonth() + 1, 0, 23, 59, 59, 999);
     const label  = mStart.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
     const mRows  = filterByRange(allTx, { from: mStart, to: mEnd });
     cashFlow.push({
@@ -432,13 +527,14 @@ function deriveFinancialData(
       expenses: sumExpenses(mRows),
       net:      sumIncome(mRows) - sumExpenses(mRows),
     });
+    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
   }
 
   // ── Expenses by category (period-filtered, EXPENSE only) ─────────────────
   const expMap: Record<string, number> = {};
   periodTx
     .filter((t) => t.type === "EXPENSE")
-    .forEach((t) => { expMap[t.category] = (expMap[t.category] ?? 0) + t.amount; });
+    .forEach((t) => { expMap[t.category] = (expMap[t.category] ?? 0) + Number(t.amount); });
   const totalExpAmt = Object.values(expMap).reduce((a, v) => a + v, 0);
   const expensesByCategory: ExpenseCategoryData[] = Object.entries(expMap)
     .sort((a, b) => b[1] - a[1])
@@ -456,7 +552,7 @@ function deriveFinancialData(
     .forEach((t) => {
       const key = t.payee?.trim() || "Unknown";
       if (!clientMap[key]) clientMap[key] = { amount: 0, count: 0 };
-      clientMap[key].amount += t.amount;
+      clientMap[key].amount += Number(t.amount);
       clientMap[key].count  += 1;
     });
   const incomeByClient: IncomeClientData[] = Object.entries(clientMap)
@@ -467,16 +563,9 @@ function deriveFinancialData(
   // ── Insights ─────────────────────────────────────────────────────────────
   const insights = buildInsights(metrics, cashFlow, expensesByCategory, incomeByClient);
 
-  // Transactions table: ALL rows from Supabase, newest first.
-  // No date filter — the table has its own search/type/category UI filters.
-  const tableRows = [...allTx].sort(
+  // ── Transactions table — filtered to the selected period, newest first ────
+  const tableRows = [...periodTx].sort(
     (a, b) => b.transaction_date.localeCompare(a.transaction_date)
-  );
-
-  console.log(
-    "[useFinancialData] allTx:", allTx.length,
-    "| periodTx (for KPIs/charts):", periodTx.length,
-    "| tableRows (to TransactionTable):", tableRows.length,
   );
 
   return {
@@ -484,7 +573,7 @@ function deriveFinancialData(
     cashFlow,
     expensesByCategory,
     incomeByClient,
-    transactions: tableRows,  // allTx — no period filter
+    transactions: tableRows,
     insights,
   };
 }

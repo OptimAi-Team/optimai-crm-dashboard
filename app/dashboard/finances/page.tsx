@@ -1,15 +1,20 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import {
   useFinancialData,
+  todayRange,
+  last7DaysRange,
   last30DaysRange,
   thisMonthRange,
-  lastNMonthsRange,
-  ytdRange,
+  lastMonthRange,
+  thisQuarterRange,
+  thisYearRange,
+  allTimeRange,
   type DateRange,
+  type Transaction,
 } from "./hooks/useFinancialData";
 import { MetricCard }        from "./components/MetricCard";
 import { CashFlowChart }     from "./components/CashFlowChart";
@@ -30,25 +35,64 @@ import {
   RefreshCw,
   ArrowLeft,
   Calendar,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// UI components
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
 // ─── Date filter presets ──────────────────────────────────────────────────────
 
-type FilterKey = "last-30d" | "this-month" | "last-3m" | "ytd" | "custom";
+type FilterKey = 
+  | "today"
+  | "last-7d"
+  | "last-30d"
+  | "this-month"
+  | "last-month"
+  | "this-quarter"
+  | "this-year"
+  | "all-time"
+  | "custom";
 
 interface FilterPreset {
   key: FilterKey;
   label: string;
-  range: () => DateRange;
+  description?: string;
+  range: (transactions?: Transaction[]) => DateRange;
 }
 
+// TypeScript type safety with Record
+const DATE_RANGE_FUNCTIONS: Record<Exclude<FilterKey, "custom">, (transactions?: Transaction[]) => DateRange> = {
+  "today": todayRange,
+  "last-7d": last7DaysRange,
+  "last-30d": last30DaysRange,
+  "this-month": thisMonthRange,
+  "last-month": lastMonthRange,
+  "this-quarter": thisQuarterRange,
+  "this-year": thisYearRange,
+  "all-time": allTimeRange,
+};
+
 const PRESETS: FilterPreset[] = [
-  { key: "last-30d",   label: "Last 30D",   range: last30DaysRange },
-  { key: "this-month", label: "This Month", range: thisMonthRange },
-  { key: "last-3m",    label: "Last 3M",    range: () => lastNMonthsRange(3) },
-  { key: "ytd",        label: "YTD",        range: ytdRange },
+  { key: "today",       label: "Today",       range: DATE_RANGE_FUNCTIONS["today"] },
+  { key: "last-7d",     label: "Last 7 days", range: DATE_RANGE_FUNCTIONS["last-7d"] },
+  { key: "last-30d",    label: "Last 30 days", range: DATE_RANGE_FUNCTIONS["last-30d"] },
+  { key: "this-month",  label: "This month",  range: DATE_RANGE_FUNCTIONS["this-month"] },
+  { key: "last-month",  label: "Last month",  range: DATE_RANGE_FUNCTIONS["last-month"] },
+  { key: "this-quarter", label: "This quarter", range: DATE_RANGE_FUNCTIONS["this-quarter"] },
+  { key: "this-year",   label: "This year",   range: DATE_RANGE_FUNCTIONS["this-year"] },
+  { key: "all-time",    label: "All time",    range: DATE_RANGE_FUNCTIONS["all-time"] },
 ];
+
+// Storage key for persisted filter preference
+const FILTER_STORAGE_KEY = 'finances-filter-preference';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -67,6 +111,22 @@ function toInputDate(d: Date): string {
     String(d.getMonth() + 1).padStart(2, "0"),
     String(d.getDate()).padStart(2, "0"),
   ].join("-");
+}
+
+/**
+ * Generate a human-readable date range description
+ */
+function formatDateRangeDescription(range: DateRange, filterKey: FilterKey): string {
+  const dateFormat: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  };
+  
+  const from = range.from.toLocaleDateString("en-US", dateFormat);
+  const to = range.to.toLocaleDateString("en-US", dateFormat);
+  
+  return `${from} – ${to}`;
 }
 
 // ─── Skeleton cards ───────────────────────────────────────────────────────────
@@ -116,10 +176,11 @@ export default function FinancesDashboardPage() {
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [activeFilter, setActiveFilter] = useState<FilterKey>("last-30d");
-  const [dateRange,    setDateRange]     = useState<DateRange>(last30DaysRange());
-  const [customFrom,   setCustomFrom]    = useState<string>("");
-  const [customTo,     setCustomTo]      = useState<string>("");
-  const [showCustom,   setShowCustom]    = useState(false);
+  const [dateRange, setDateRange] = useState<DateRange>(last30DaysRange());
+  const [customFrom, setCustomFrom] = useState<string>("");
+  const [customTo, setCustomTo] = useState<string>("");
+  const [showCustom, setShowCustom] = useState(false);
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
 
   const {
     metrics,
@@ -133,6 +194,29 @@ export default function FinancesDashboardPage() {
     refetch,
   } = useFinancialData(dateRange);
 
+  // Set all transactions for use with allTimeRange
+  useEffect(() => {
+    if (!loading && transactions?.length > 0) {
+      setAllTransactions(transactions);
+    }
+  }, [transactions, loading]);
+
+  // Load saved filter preference from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedFilter = localStorage.getItem(FILTER_STORAGE_KEY);
+        if (savedFilter && Object.keys(DATE_RANGE_FUNCTIONS).includes(savedFilter)) {
+          const filterKey = savedFilter as FilterKey;
+          setActiveFilter(filterKey);
+          setDateRange(DATE_RANGE_FUNCTIONS[filterKey as keyof typeof DATE_RANGE_FUNCTIONS](allTransactions));
+        }
+      } catch (err) {
+        console.error('Error loading saved filter preference:', err);
+      }
+    }
+  }, [allTransactions]);
+
   // Redirect if not authenticated
   if (!authLoading && !user) {
     router.push("/login");
@@ -141,21 +225,33 @@ export default function FinancesDashboardPage() {
 
   const handlePreset = useCallback((preset: FilterPreset) => {
     setActiveFilter(preset.key);
-    setDateRange(preset.range());
+    setDateRange(preset.range(allTransactions));
     setShowCustom(false);
-  }, []);
+
+    // Save preference to localStorage
+    try {
+      localStorage.setItem(FILTER_STORAGE_KEY, preset.key);
+    } catch (err) {
+      console.error('Error saving filter preference:', err);
+    }
+  }, [allTransactions]);
 
   const applyCustomRange = useCallback(() => {
     if (!customFrom || !customTo) return;
-    setDateRange({
-      // Bug 3: append local-time suffix so JS parses in local time, not UTC.
+    
+    const range = {
+      // Append local-time suffix so JS parses in local time, not UTC.
       // "2026-04-01" alone parses as UTC midnight → March 31 at 4pm in PT.
       // "2026-04-01T00:00:00" parses as local midnight → April 1 at 12am PT.
       from: new Date(customFrom + "T00:00:00"),
-      to:   new Date(customTo   + "T23:59:59"),
-    });
+      to:   new Date(customTo + "T23:59:59"),
+    };
+    
+    setDateRange(range);
     setActiveFilter("custom");
     setShowCustom(false);
+    
+    // Custom ranges aren't saved to localStorage
   }, [customFrom, customTo]);
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -178,44 +274,53 @@ export default function FinancesDashboardPage() {
                 Financial Dashboard
               </h1>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {dateRange.from.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                {" – "}
-                {dateRange.to.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                <span className="font-medium">{PRESETS.find(p => p.key === activeFilter)?.label || "Custom Range"}: </span>
+                {formatDateRangeDescription(dateRange, activeFilter)}
               </p>
             </div>
           </div>
 
           {/* Right: filters + refresh */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Preset buttons */}
-            <div className="flex items-center bg-secondary rounded-lg p-1 gap-0.5">
-              {PRESETS.map((p) => (
-                <button
-                  key={p.key}
-                  onClick={() => handlePreset(p)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200",
-                    activeFilter === p.key
-                      ? "bg-card text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Date Range Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-9 gap-1.5"
                 >
-                  {p.label}
-                </button>
-              ))}
-              <button
-                onClick={() => setShowCustom((v) => !v)}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200",
-                  activeFilter === "custom"
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                Custom
-              </button>
-            </div>
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>{PRESETS.find(p => p.key === activeFilter)?.label || "Custom"}</span>
+                  <ChevronDown className="w-3.5 h-3.5 text-muted-foreground ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuGroup>
+                  {PRESETS.map((preset) => (
+                    <DropdownMenuItem 
+                      key={preset.key} 
+                      onClick={() => handlePreset(preset)}
+                      className={cn(
+                        "cursor-pointer",
+                        activeFilter === preset.key && "font-medium bg-secondary/50"
+                      )}
+                    >
+                      {preset.label}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuItem 
+                    onClick={() => setShowCustom(true)}
+                    className={cn(
+                      "cursor-pointer",
+                      activeFilter === "custom" && "font-medium bg-secondary/50"
+                    )}
+                  >
+                    Custom Range
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             {/* Refresh */}
             <Button
@@ -235,33 +340,42 @@ export default function FinancesDashboardPage() {
         {/* Custom date picker */}
         {showCustom && (
           <div className="mt-3 flex items-center gap-2 flex-wrap animate-in fade-in slide-in-from-top-2 duration-200">
-            <Input
-              type="date"
-              value={customFrom}
-              onChange={(e) => setCustomFrom(e.target.value)}
-              max={customTo || toInputDate(new Date())}
-              className="h-9 w-40 bg-secondary border-border text-sm"
-            />
-            <span className="text-muted-foreground text-sm">to</span>
-            <Input
-              type="date"
-              value={customTo}
-              onChange={(e) => setCustomTo(e.target.value)}
-              min={customFrom}
-              max={toInputDate(new Date())}
-              className="h-9 w-40 bg-secondary border-border text-sm"
-            />
-            <Button
-              size="sm"
-              onClick={applyCustomRange}
-              disabled={!customFrom || !customTo}
-              className="h-9"
-            >
-              Apply
-            </Button>
+            <div className="flex flex-col gap-1">
+              <label htmlFor="date-from" className="text-xs text-muted-foreground">From date</label>
+              <Input
+                id="date-from"
+                type="date"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                max={customTo || toInputDate(new Date())}
+                className="h-9 w-44 bg-secondary border-border text-sm"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label htmlFor="date-to" className="text-xs text-muted-foreground">To date</label>
+              <Input
+                id="date-to"
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                min={customFrom}
+                max={toInputDate(new Date())}
+                className="h-9 w-44 bg-secondary border-border text-sm"
+              />
+            </div>
+            <div className="flex flex-col gap-1 justify-end">
+              <Button
+                size="sm"
+                onClick={applyCustomRange}
+                disabled={!customFrom || !customTo}
+                className="h-9"
+              >
+                Apply
+              </Button>
+            </div>
             <button
               onClick={() => setShowCustom(false)}
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors mt-auto mb-1"
             >
               Cancel
             </button>
@@ -410,8 +524,6 @@ export default function FinancesDashboardPage() {
 
         {/* ── Transactions ──────────────────────────────────────────────────── */}
         <section aria-label="Transaction history">
-          {/* Cleanup 2: removed .slice(0,50) and dead "View all" no-op button.
-              TransactionTable has its own 15-row pagination — the slice was redundant. */}
           {loading ? (
             <TableSkeleton />
           ) : (
